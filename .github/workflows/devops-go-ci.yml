@@ -28,9 +28,13 @@ concurrency:
 jobs:
   mod-tidy:
 <<<<<<< HEAD
+<<<<<<< HEAD
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-mod-tidy-check.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 =======
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-mod-tidy-check.yml@3f9db1bab72f3f4be9463329b6f4fe3a391afa6e
+>>>>>>> origin/main
+=======
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-mod-tidy-check.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 >>>>>>> origin/main
     with:
       go-version: "1.25.8"
@@ -38,9 +42,13 @@ jobs:
 
   fmt:
 <<<<<<< HEAD
+<<<<<<< HEAD
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fmt.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 =======
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fmt.yml@3f9db1bab72f3f4be9463329b6f4fe3a391afa6e
+>>>>>>> origin/main
+=======
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fmt.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 >>>>>>> origin/main
     with:
       go-version: "1.25.8"
@@ -49,9 +57,13 @@ jobs:
   lint:
     needs: [fmt]
 <<<<<<< HEAD
+<<<<<<< HEAD
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-lint.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 =======
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-lint.yml@3f9db1bab72f3f4be9463329b6f4fe3a391afa6e
+>>>>>>> origin/main
+=======
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-lint.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 >>>>>>> origin/main
     with:
       go-version: "1.25.8"
@@ -60,9 +72,13 @@ jobs:
   test:
     needs: [fmt]
 <<<<<<< HEAD
+<<<<<<< HEAD
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 =======
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@3f9db1bab72f3f4be9463329b6f4fe3a391afa6e
+>>>>>>> origin/main
+=======
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 >>>>>>> origin/main
     with:
       go-version: "1.25.8"
@@ -72,9 +88,13 @@ jobs:
   integration:
     needs: [fmt]
 <<<<<<< HEAD
+<<<<<<< HEAD
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 =======
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@3f9db1bab72f3f4be9463329b6f4fe3a391afa6e
+>>>>>>> origin/main
+=======
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@b253b2329a11552b6276781c56f6dc6fd1718710
 >>>>>>> origin/main
     with:
       go-version: "1.25.8"

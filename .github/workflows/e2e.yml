@@ -15,7 +15,7 @@ on:
 
 jobs:
   e2e:
-    uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-run-commands.yml@ed2f7d29467bf1fd6ec40df3953b3ee128ba3f04
+    uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-run-commands.yml@01e2b12e992621fecf074b8a202f66044196f3bf
     with:
       working-directory: "."
       setup-go: true
