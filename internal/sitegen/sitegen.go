@@ -83,11 +83,12 @@ func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
 		parseFiles = append(parseFiles, pageFile)
 
 		tpl, err := template.New("layout").Funcs(template.FuncMap{
-			"dict":     dict,
-			"list":     list,
-			"safeHTML": safeHTML,
-			"dig":      dig,
-			"required": required,
+			"dict":       dict,
+			"list":       list,
+			"safeHTML":   safeHTML,
+			"dig":        dig,
+			"required":   required,
+			"trimSuffix": strings.TrimSuffix,
 		}).ParseFiles(parseFiles...)
 		if err != nil {
 			return nil, err
