@@ -83,6 +83,14 @@ jobs:
       working-directory: "."
       upload-sarif: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
 
+  lint:
+    permissions:
+      contents: read
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-lint.yml@01e2b12e992621fecf074b8a202f66044196f3bf
+    with:
+      go-version: "1.25.8"
+      working-directory: "."
+
   snyk:
     if: false
     permissions:
