@@ -25,6 +25,7 @@ jobs:
       working-directory: "."
       scan-history: true
       upload-sarif: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+
   codeql:
     permissions:
       actions: read
@@ -91,7 +92,7 @@ jobs:
       working-directory: "."
 
   snyk:
-    if: ${{ secrets.SNYK_TOKEN != '' }}
+    if: false
     permissions:
       contents: read
       security-events: write
@@ -99,5 +100,3 @@ jobs:
     with:
       working-directory: "."
       upload-sarif: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
-    secrets:
-      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

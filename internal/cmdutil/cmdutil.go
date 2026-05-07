@@ -144,7 +144,15 @@ func LoadAndValidateSiteData(logger *slog.Logger, templatesDir, siteDataSource s
 	return pages, siteDataResult, siteDataContractResult, nil
 }
 
+const recaptchaTestSiteKey = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
+
 func RenderPages(pages []sitegen.PageTemplate, siteData map[string]any) (map[string]string, error) {
+	// Inject the official Google test key when recaptcha_site_key is absent.
+	// Production site.yaml sets the real key; local dev and builds without a key
+	// get the test key automatically so reCAPTCHA loads on any domain.
+	if _, ok := siteData["recaptcha_site_key"]; !ok {
+		siteData["recaptcha_site_key"] = recaptchaTestSiteKey
+	}
 	renderedPages := make(map[string]string, len(pages))
 	for _, page := range pages {
 		var rendered bytes.Buffer

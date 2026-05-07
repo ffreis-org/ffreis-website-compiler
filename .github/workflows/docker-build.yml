@@ -3,17 +3,32 @@ name: Docker Build
 on:
   pull_request:
     paths:
-      - '**'
-      - '.github/workflows/**'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'containers/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/docker-build.yml'
   push:
     branches: [main, master]
     paths:
-      - '**'
-      - '.github/workflows/**'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'containers/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/docker-build.yml'
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   docker:
-    uses: FelipeFuhr/ffreis-workflows-container/.github/workflows/container-build.yml@d98c6bb3df3e09b3c47b19b9778a7650a406c96b
+    permissions:
+      contents: read
+      packages: write
+    uses: FelipeFuhr/ffreis-workflows-container/.github/workflows/container-build.yml@f75a40f7a44cade2b00a8843f75b3f86dfe80a0e
     with:
       image: "website-compiler-cli"
       containerfile: "containers/Dockerfile.cli"
@@ -23,3 +38,4 @@ jobs:
       build-args: |-
         BUILDER_IMAGE=${{ vars.WEBSITE_COMPILER_BUILDER_IMAGE || 'golang:1.25.8-bookworm' }}
         RUNTIME_IMAGE=${{ vars.WEBSITE_COMPILER_RUNTIME_IMAGE || 'debian:bookworm-slim' }}
+    secrets: inherit
