@@ -112,6 +112,7 @@ type buildOptions struct {
 	mirrorExternalAssets bool
 	mirroredAssetsDir    string
 	enableSanity         bool
+	strictContract       bool
 	cleanURLs            bool
 }
 
@@ -136,6 +137,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
+	fs.BoolVar(&opts.strictContract, "strict-contract", true, "fail if any allowed contract path is not referenced by any template (disable for local dev with in-progress templates)")
 	fs.BoolVar(&opts.cleanURLs, "clean-urls", false, "output each page as <name>/index.html instead of <name>.html for extension-free URLs; updates sitemap accordingly")
 
 	if err := fs.Parse(args); err != nil {
@@ -229,16 +231,52 @@ func maybeInitMirrorer(opts buildOptions) (*externalAssetMirrorer, error) {
 }
 
 func loadAndValidateSiteInputs(logger *slog.Logger, opts buildOptions, templatesDir string) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
-	pages, siteDataResult, siteDataContractResult, err := cmdutil.LoadAndValidateSiteData(logger, templatesDir, opts.siteDataSource)
+	var (
+		pages                  []sitegen.PageTemplate
+		siteDataResult         sitegen.SiteDataLoadResult
+		siteDataContractResult sitegen.SiteDataContractLoadResult
+		err                    error
+	)
+
+	if opts.strictContract {
+		pages, siteDataResult, siteDataContractResult, err = cmdutil.LoadAndValidateSiteData(logger, templatesDir, opts.siteDataSource)
+	} else {
+		pages, siteDataResult, siteDataContractResult, err = loadSiteDataNoUsageCheck(logger, templatesDir, opts.siteDataSource)
+	}
 	if err != nil {
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
 	}
+
 	if opts.enableSanity {
 		if err := sitegen.ValidateSiteSanity(siteDataResult.Data, sitegen.DefaultSanityConfig()); err != nil {
 			return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("validating site sanity rules: %w", err)
 		}
 	}
 	logger.Info("loaded templates", "count", len(pages), "templates_dir", templatesDir)
+	return pages, siteDataResult, siteDataContractResult, nil
+}
+
+// loadSiteDataNoUsageCheck loads templates and data, validates data against the
+// contract (no dangling fields, required fields present), but skips the check
+// that every allowed contract path is referenced by a template. Use this for
+// local development when templates are still in progress.
+func loadSiteDataNoUsageCheck(logger *slog.Logger, templatesDir, siteDataSource string) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
+	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesDir)
+	if err != nil {
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading templates: %w", err)
+	}
+	siteDataResult, err := sitegen.LoadSiteData(templatesDir, siteDataSource)
+	if err != nil {
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data: %w", err)
+	}
+	siteDataContractResult, err := sitegen.LoadSiteDataContract(templatesDir)
+	if err != nil {
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
+	}
+	cmdutil.LogSiteDataOverride(logger, siteDataResult)
+	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
+		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("validating site data against contract: %w", err)
+	}
 	return pages, siteDataResult, siteDataContractResult, nil
 }
 
