@@ -230,9 +230,9 @@ func TestRun_InternalPageExcludedFromOutput(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			websiteRoot := newTestWebsiteRoot(t)
 			testutil.WriteFiles(t, map[string]string{
-				filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):        mainCSSContent,
-				filepath.Join(websiteRoot, "src", "data", fileSiteYAML):                siteYAML,
-				filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):        tc.contract,
+				filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+				filepath.Join(websiteRoot, "src", "data", fileSiteYAML):                   siteYAML,
+				filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           tc.contract,
 				filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): tmpl,
 			})
 
