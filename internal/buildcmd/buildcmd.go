@@ -80,6 +80,9 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 
+	// Render all pages (including internal ones) so their CSS/JS assets are
+	// seen as "used" by the asset validator. Internal pages are filtered out
+	// from disk output and sitemap after validation.
 	renderedPages, err := cmdutil.RenderPages(pages, siteDataResult.Data)
 	if err != nil {
 		return err
@@ -87,6 +90,8 @@ func Run(args []string, logger *slog.Logger) error {
 	if _, err := assetusage.Validate(assetsDir, renderedPages); err != nil {
 		return fmt.Errorf("validating local css/js asset usage: %w", err)
 	}
+
+	pages = filterInternalPages(pages, siteDataResult.Data)
 
 	if err := writePages(logger, opts, pages, assetsDir, renderedPages, mirrorer); err != nil {
 		return err
@@ -238,11 +243,7 @@ func loadAndValidateSiteInputs(logger *slog.Logger, opts buildOptions, templates
 		err                    error
 	)
 
-	if opts.strictContract {
-		pages, siteDataResult, siteDataContractResult, err = cmdutil.LoadAndValidateSiteData(logger, templatesDir, opts.siteDataSource)
-	} else {
-		pages, siteDataResult, siteDataContractResult, err = loadSiteDataNoUsageCheck(logger, templatesDir, opts.siteDataSource)
-	}
+	pages, siteDataResult, siteDataContractResult, err = loadSiteDataWithOptionalUsageCheck(logger, templatesDir, opts.siteDataSource, opts.strictContract)
 	if err != nil {
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
 	}
@@ -256,11 +257,11 @@ func loadAndValidateSiteInputs(logger *slog.Logger, opts buildOptions, templates
 	return pages, siteDataResult, siteDataContractResult, nil
 }
 
-// loadSiteDataNoUsageCheck loads templates and data, validates data against the
-// contract (no dangling fields, required fields present), but skips the check
-// that every allowed contract path is referenced by a template. Use this for
-// local development when templates are still in progress.
-func loadSiteDataNoUsageCheck(logger *slog.Logger, templatesDir, siteDataSource string) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
+// loadSiteDataWithOptionalUsageCheck loads templates and data, validates site
+// data against the contract, and optionally validates contract usage by
+// templates. The build command treats pages.<name>.internal as compiler-managed
+// metadata and excludes it from contract checks.
+func loadSiteDataWithOptionalUsageCheck(logger *slog.Logger, templatesDir, siteDataSource string, validateUsage bool) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
 	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesDir)
 	if err != nil {
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading templates: %w", err)
@@ -274,16 +275,88 @@ func loadSiteDataNoUsageCheck(logger *slog.Logger, templatesDir, siteDataSource 
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
 	}
 	cmdutil.LogSiteDataOverride(logger, siteDataResult)
-	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
+	contract := contractWithoutPageInternalPatterns(siteDataContractResult.Contract)
+	siteDataForValidation := siteDataWithoutPageInternalFlags(siteDataResult.Data)
+	if err := sitegen.ValidateSiteData(siteDataForValidation, contract); err != nil {
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("validating site data against contract: %w", err)
 	}
+	if validateUsage {
+		usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
+		if err != nil {
+			return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("tracing site data usage: %w", err)
+		}
+		if err := sitegen.ValidateSiteDataContractUsage(contract, usedPaths); err != nil {
+			return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("validating site data contract usage: %w", err)
+		}
+	}
 	return pages, siteDataResult, siteDataContractResult, nil
+}
+
+// siteDataWithoutPageInternalFlags returns a shallow copy of siteData where
+// the "internal" key has been removed from every page entry. Only the two
+// affected levels (top-level map and the pages map) are copied; deeper values
+// are shared and never mutated.
+func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
+	pagesData, ok := siteData["pages"].(map[string]any)
+	if !ok {
+		return siteData
+	}
+
+	newPages := make(map[string]any, len(pagesData))
+	for name, pageData := range pagesData {
+		pageMap, ok := pageData.(map[string]any)
+		if !ok {
+			newPages[name] = pageData
+			continue
+		}
+		copied := make(map[string]any, len(pageMap))
+		for k, v := range pageMap {
+			copied[k] = v
+		}
+		delete(copied, "internal")
+		newPages[name] = copied
+	}
+
+	result := make(map[string]any, len(siteData))
+	for k, v := range siteData {
+		result[k] = v
+	}
+	result["pages"] = newPages
+	return result
+}
+
+func contractWithoutPageInternalPatterns(contract sitegen.SiteDataContract) sitegen.SiteDataContract {
+	contract.Required = contractPatternsWithoutPageInternal(contract.Required)
+	contract.Allowed = contractPatternsWithoutPageInternal(contract.Allowed)
+	return contract
+}
+
+func contractPatternsWithoutPageInternal(patterns []string) []string {
+	filtered := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		if !isPageInternalPattern(pattern) {
+			filtered = append(filtered, pattern)
+		}
+	}
+	return filtered
+}
+
+func isPageInternalPattern(pattern string) bool {
+	parts := strings.Split(strings.TrimSpace(pattern), ".")
+	if len(parts) != 3 || parts[0] != "pages" || parts[2] != "internal" {
+		return false
+	}
+	segment := parts[1]
+	if segment == "*" {
+		return true
+	}
+	return segment != "" && !strings.Contains(segment, "*")
 }
 
 func resolvePageTarget(outDir, pageName string, cleanURLs bool) (string, error) {
 	if cleanURLs && pageName != "index" {
 		dir := filepath.Join(outDir, pageName)
-		if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return "", fmt.Errorf("creating directory for %s: %w", pageName, err)
 		}
 		return filepath.Join(dir, "index.html"), nil
@@ -1235,4 +1308,19 @@ func copyFile(src, dst string) error {
 	}
 
 	return out.Close()
+}
+
+// filterInternalPages removes pages marked internal: true in the site data
+// (pages.<name>.internal). Such pages are still rendered (for asset usage
+// validation) but excluded from HTML output and sitemap generation.
+func filterInternalPages(pages []sitegen.PageTemplate, siteData map[string]any) []sitegen.PageTemplate {
+	pagesData, _ := siteData["pages"].(map[string]any)
+	result := pages[:0:0]
+	for _, p := range pages {
+		pd, _ := pagesData[p.Name].(map[string]any)
+		if internal, _ := pd["internal"].(bool); !internal {
+			result = append(result, p)
+		}
+	}
+	return result
 }

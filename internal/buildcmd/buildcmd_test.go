@@ -204,6 +204,49 @@ func TestRun_FailsWhenContractDeclaresUnusedTemplatePath(t *testing.T) {
 	}
 }
 
+func TestRun_InternalPageExcludedFromOutput(t *testing.T) {
+	siteYAML := `pages:
+  agenda:
+    title: Agenda interna
+    internal: true
+`
+	tmpl := `{{define "page"}}{{required (dig .SiteData "pages" "agenda" "title") "missing pages.agenda.title"}}{{end}}`
+
+	cases := []struct {
+		name     string
+		contract string
+	}{
+		{
+			name:     "internal flag without contract path",
+			contract: "allowed:\n  - pages.*.title\n",
+		},
+		{
+			name:     "internal flag with contract pattern",
+			contract: "allowed:\n  - pages.*.title\n  - pages.*.internal\n",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			websiteRoot := newTestWebsiteRoot(t)
+			testutil.WriteFiles(t, map[string]string{
+				filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+				filepath.Join(websiteRoot, "src", "data", fileSiteYAML):                   siteYAML,
+				filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           tc.contract,
+				filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): tmpl,
+			})
+
+			outDir := t.TempDir()
+			if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+				t.Fatalf(buildRunFailed, err)
+			}
+			if _, err := os.Stat(filepath.Join(outDir, fileAgendaHTML)); !os.IsNotExist(err) {
+				t.Fatalf("expected internal page output to be absent, got err=%v", err)
+			}
+		})
+	}
+}
+
 func TestRun_SiteDataOverrideWinsAndWarns(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
