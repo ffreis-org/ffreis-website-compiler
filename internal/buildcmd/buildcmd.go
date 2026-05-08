@@ -292,24 +292,37 @@ func loadSiteDataWithOptionalUsageCheck(logger *slog.Logger, templatesDir, siteD
 	return pages, siteDataResult, siteDataContractResult, nil
 }
 
+// siteDataWithoutPageInternalFlags returns a shallow copy of siteData where
+// the "internal" key has been removed from every page entry. Only the two
+// affected levels (top-level map and the pages map) are copied; deeper values
+// are shared and never mutated.
 func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
-	cloned := deepCopyMap(siteData)
-
-	pagesData, ok := cloned["pages"].(map[string]any)
+	pagesData, ok := siteData["pages"].(map[string]any)
 	if !ok {
-		return cloned
+		return siteData
 	}
 
-	for pageName, pageData := range pagesData {
+	newPages := make(map[string]any, len(pagesData))
+	for name, pageData := range pagesData {
 		pageMap, ok := pageData.(map[string]any)
 		if !ok {
+			newPages[name] = pageData
 			continue
 		}
-		delete(pageMap, "internal")
-		pagesData[pageName] = pageMap
+		copied := make(map[string]any, len(pageMap))
+		for k, v := range pageMap {
+			copied[k] = v
+		}
+		delete(copied, "internal")
+		newPages[name] = copied
 	}
 
-	return cloned
+	result := make(map[string]any, len(siteData))
+	for k, v := range siteData {
+		result[k] = v
+	}
+	result["pages"] = newPages
+	return result
 }
 
 func contractWithoutPageInternalPatterns(contract sitegen.SiteDataContract) sitegen.SiteDataContract {
@@ -321,10 +334,9 @@ func contractWithoutPageInternalPatterns(contract sitegen.SiteDataContract) site
 func contractPatternsWithoutPageInternal(patterns []string) []string {
 	filtered := make([]string, 0, len(patterns))
 	for _, pattern := range patterns {
-		if isPageInternalPattern(pattern) {
-			continue
+		if !isPageInternalPattern(pattern) {
+			filtered = append(filtered, pattern)
 		}
-		filtered = append(filtered, pattern)
 	}
 	return filtered
 }
@@ -339,35 +351,6 @@ func isPageInternalPattern(pattern string) bool {
 		return true
 	}
 	return segment != "" && !strings.Contains(segment, "*")
-}
-
-// deepCopyAny recursively deep-copies map[string]any and []any values.
-// Other value types are returned as-is.
-func deepCopyAny(value any) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		cloned := make(map[string]any, len(typed))
-		for key, child := range typed {
-			cloned[key] = deepCopyAny(child)
-		}
-		return cloned
-	case []any:
-		cloned := make([]any, len(typed))
-		for i, child := range typed {
-			cloned[i] = deepCopyAny(child)
-		}
-		return cloned
-	default:
-		return value
-	}
-}
-
-func deepCopyMap(source map[string]any) map[string]any {
-	cloned, ok := deepCopyAny(source).(map[string]any)
-	if !ok || cloned == nil {
-		return map[string]any{}
-	}
-	return cloned
 }
 
 func resolvePageTarget(outDir, pageName string, cleanURLs bool) (string, error) {
