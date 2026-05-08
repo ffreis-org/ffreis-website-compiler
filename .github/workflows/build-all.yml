@@ -11,6 +11,10 @@ on:
       - '**'
       - '.github/workflows/**'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-cross-build-matrix.yml@e9b9cc0cde6465b785f4b7c71d2180f5b265f42f
