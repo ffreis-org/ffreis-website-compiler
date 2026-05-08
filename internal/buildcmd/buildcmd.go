@@ -288,7 +288,7 @@ func loadSiteDataNoUsageCheck(logger *slog.Logger, templatesDir, siteDataSource 
 func resolvePageTarget(outDir, pageName string, cleanURLs bool) (string, error) {
 	if cleanURLs && pageName != "index" {
 		dir := filepath.Join(outDir, pageName)
-		if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return "", fmt.Errorf("creating directory for %s: %w", pageName, err)
 		}
 		return filepath.Join(dir, "index.html"), nil
