@@ -364,39 +364,111 @@ func resolvePageTarget(outDir, pageName string, cleanURLs bool) (string, error) 
 	return filepath.Join(outDir, pageName+".html"), nil
 }
 
+// injectNavigationEnhancements inserts two <head> elements into every rendered page:
+//   - Cross-document view-transition CSS: eliminates the flash-of-unstyled-content on
+//     page navigation by fading between pages instead of doing a hard repaint.
+//   - Speculation Rules JSON: tells supporting browsers to prerender same-origin pages
+//     the user is likely to visit (on hover, eagerness=moderate), making navigations
+//     feel near-instant.
+//
+// Both features degrade silently in unsupported browsers, so no flag is provided.
+func injectNavigationEnhancements(html string) string {
+	const inject = `<style>@view-transition{navigation:auto}</style>` +
+		"\n    " +
+		`<script type="speculationrules">{"prerender":[{"where":{"href_matches":"/*"},"eagerness":"moderate"}]}</script>`
+	return strings.Replace(html, "</head>", inject+"\n</head>", 1)
+}
+
 func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, assetsDir string, renderedPages map[string]string, mirrorer *externalAssetMirrorer) error {
+	allToCopy := make(map[string]string) // hashedRelPath → originalRelPath
+
 	for _, page := range pages {
 		target, err := resolvePageTarget(opts.outDir, page.Name, opts.cleanURLs)
 		if err != nil {
 			return err
 		}
-
-		htmlOut := renderedPages[page.Name]
-
-		if opts.inlineAssets {
-			updated, err := inlineLocalAssets(htmlOut, assetsDir)
-			if err != nil {
-				return fmt.Errorf("inlining assets in %s: %w", target, err)
-			}
-			htmlOut = updated
+		htmlOut, pageCopy, err := transformPage(renderedPages[page.Name], opts, assetsDir, mirrorer)
+		if err != nil {
+			return fmt.Errorf("transforming %s: %w", target, err)
 		}
-
-		if mirrorer != nil {
-			updated, err := mirrorer.rewriteHTML(htmlOut)
-			if err != nil {
-				return fmt.Errorf("mirroring external assets in %s: %w", target, err)
-			}
-			htmlOut = updated
+		for k, v := range pageCopy {
+			allToCopy[k] = v
 		}
-
 		if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf(errFmtWriting, target, err)
 		}
-
 		logger.Info("generated page", "page", page.Name, "target", target)
 		fmt.Fprintln(os.Stdout, target)
 	}
+
+	return writeHashedAssets(opts.outDir, assetsDir, allToCopy)
+}
+
+func writeHashedAssets(outDir, assetsDir string, assets map[string]string) error {
+	for hashedRel, origRel := range assets {
+		src := filepath.Join(assetsDir, filepath.FromSlash(origRel))
+		dst := filepath.Join(outDir, filepath.FromSlash(hashedRel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { //nolint:gosec
+			return fmt.Errorf("creating dir for %s: %w", hashedRel, err)
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return fmt.Errorf("reading %s for hashed copy: %w", origRel, err)
+		}
+		if err := os.WriteFile(dst, data, 0o644); err != nil { //nolint:gosec
+			return fmt.Errorf("writing hashed asset %s: %w", hashedRel, err)
+		}
+	}
 	return nil
+}
+
+func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *externalAssetMirrorer) (string, map[string]string, error) {
+	html = injectNavigationEnhancements(html)
+
+	if opts.inlineAssets {
+		// Full asset inlining (CSS + JS + images). Converts url() to data URIs so the
+		// page is fully self-contained. Does not fingerprint (data URIs need no cache key).
+		updated, err := inlineLocalAssets(html, assetsDir)
+		if err != nil {
+			return "", nil, fmt.Errorf("inlining assets: %w", err)
+		}
+		html = updated
+	} else {
+		// Position-based CSS loading:
+		//   head  CSS → inlined as <style> (critical, zero-latency, render-correct)
+		//   body  CSS → kept external with media="print" onload trick (deferred, non-blocking)
+		// Mirrors the JS-at-end convention: document position signals loading priority.
+		updated, err := transformStylesheets(html, assetsDir)
+		if err != nil {
+			return "", nil, fmt.Errorf("transforming stylesheets: %w", err)
+		}
+		html = updated
+	}
+
+	// LQIP: generate blurry thumbnails for above-fold images and swap to full on load.
+	lqipHTML, err := processLQIPImages(html, assetsDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("processing LQIP images: %w", err)
+	}
+	html = lqipHTML
+
+	// Fingerprint all remaining external local asset references so CloudFront
+	// can serve them with immutable (1-year) cache headers.
+	fingerprintedHTML, toCopy, err := fingerprintLocalAssets(html, assetsDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("fingerprinting assets: %w", err)
+	}
+	html = fingerprintedHTML
+
+	if mirrorer != nil {
+		updated, err := mirrorer.rewriteHTML(html)
+		if err != nil {
+			return "", nil, fmt.Errorf("mirroring external assets: %w", err)
+		}
+		html = updated
+	}
+
+	return html, toCopy, nil
 }
 
 func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir string, pages []sitegen.PageTemplate) error {
@@ -477,6 +549,28 @@ func (m *externalAssetMirrorer) rewriteHTML(doc string) (string, error) {
 
 	doc, err = replaceTagWith(doc, imgTagRE, func(tag string, refs []string) (string, error) {
 		return m.replaceExternalRef(tag, refs[1], "")
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// Mirror external url() refs inside inline <style> blocks. These arise when CSS
+	// is inlined by the compiler (inlineLocalStylesheetsPreserveURLs) and the original
+	// CSS file contained external http:// background-image or other url() references.
+	doc = styleBlockRE.ReplaceAllStringFunc(doc, func(block string) string {
+		if err != nil {
+			return block
+		}
+		parts := styleBlockRE.FindStringSubmatch(block)
+		if parts == nil {
+			return block
+		}
+		rewritten, e := m.rewriteCSS(parts[2], nil)
+		if e != nil {
+			err = e
+			return block
+		}
+		return parts[1] + rewritten + parts[3]
 	})
 	if err != nil {
 		return "", err
@@ -724,7 +818,37 @@ func inlineLocalAssets(doc, srcRoot string) (string, error) {
 	return inlineLocalImages(doc, srcRoot)
 }
 
+func wrapInStyleTag(css, media string) string {
+	if media != "" {
+		return "<style media=\"" + htmlEscape(media) + "\">\n" + css + "\n</style>"
+	}
+	return "<style>\n" + css + "\n</style>"
+}
+
 func inlineLocalStylesheets(doc, srcRoot string) (string, error) {
+	return replaceTagWith(doc, stylesheetTagRE, func(tag string, refs []string) (string, error) {
+		href := refs[1]
+		if isExternalRef(href) {
+			return tag, nil
+		}
+		cssBytes, cssPath, err := readAsset(srcRoot, href)
+		if err != nil {
+			return "", err
+		}
+		inlinedCSS, err := inlineCSSURLs(string(cssBytes), srcRoot, cssPath)
+		if err != nil {
+			return "", err
+		}
+		return wrapInStyleTag(inlinedCSS, getTagAttr(tag, "media")), nil
+	})
+}
+
+// inlineLocalStylesheetsPreserveURLs inlines CSS text but rewrites url() references
+// to root-relative absolute paths (/dir/file.ext) instead of converting them to data
+// URIs. This keeps font and image files external so they can be cached and fingerprinted
+// separately, avoiding the ~280 KB of base64 font data that inlineLocalStylesheets would
+// embed per page.
+func inlineLocalStylesheetsPreserveURLs(doc, srcRoot string) (string, error) {
 	return replaceTagWith(doc, stylesheetTagRE, func(tag string, refs []string) (string, error) {
 		href := refs[1]
 		if isExternalRef(href) {
@@ -736,17 +860,81 @@ func inlineLocalStylesheets(doc, srcRoot string) (string, error) {
 			return "", err
 		}
 
-		inlinedCSS, err := inlineCSSURLs(string(cssBytes), srcRoot, cssPath)
+		rebasedCSS, err := rewriteCSSURLs(string(cssBytes), func(ref string) (string, bool, error) {
+			if isExternalRef(ref) || isDataURI(ref) {
+				return ref, false, nil
+			}
+			// Resolve the url() ref relative to the CSS file, then make it root-relative.
+			resolved := resolveCSSAssetRef(cssPath, ref)
+			abs := "/" + resolved
+			return abs, abs != ref, nil
+		})
 		if err != nil {
 			return "", err
 		}
 
-		media := getTagAttr(tag, "media")
-		if media != "" {
-			return "<style media=\"" + htmlEscape(media) + "\">\n" + inlinedCSS + "\n</style>", nil
-		}
-		return "<style>\n" + inlinedCSS + "\n</style>", nil
+		return wrapInStyleTag(rebasedCSS, getTagAttr(tag, "media")), nil
 	})
+}
+
+// transformStylesheets applies position-based CSS loading: stylesheet links in <head>
+// are inlined (critical path, zero-latency), while links in <body> are kept external
+// and given the media="print" onload deferred-loading pattern (non-blocking).
+//
+// This mirrors the JS-at-end convention: document position signals loading priority.
+// Templates that want a stylesheet deferred simply place its <link> in the body.
+// If </head> is absent the entire document is treated as head (all CSS inlined).
+func transformStylesheets(doc, assetsDir string) (string, error) {
+	headEndRE := regexp.MustCompile(`(?i)</head>`)
+	loc := headEndRE.FindStringIndex(doc)
+	if loc == nil {
+		return inlineLocalStylesheetsPreserveURLs(doc, assetsDir)
+	}
+	head, err := inlineLocalStylesheetsPreserveURLs(doc[:loc[0]], assetsDir)
+	if err != nil {
+		return "", err
+	}
+	tail, err := deferLocalStylesheets(doc[loc[0]:], assetsDir)
+	if err != nil {
+		return "", err
+	}
+	return head + tail, nil
+}
+
+// deferLocalStylesheets rewrites local <link rel="stylesheet"> tags found in the
+// document body to use the media="print" onload deferred-loading pattern, which
+// fetches the CSS without blocking rendering. A <noscript> fallback is appended after
+// each transformed tag for environments where JavaScript is unavailable.
+// External stylesheet URLs are left unchanged.
+func deferLocalStylesheets(doc, assetsDir string) (string, error) {
+	return replaceTagWith(doc, stylesheetTagRE, func(tag string, refs []string) (string, error) {
+		href := refs[1]
+		if isExternalRef(href) {
+			return tag, nil
+		}
+		// Verify the asset exists; skip if not found.
+		if _, _, err := readAsset(assetsDir, href); err != nil {
+			return tag, nil
+		}
+		deferred := addOrReplaceAttr(tag, "media", "print")
+		deferred = addOrReplaceAttr(deferred, "onload", "this.media='all'")
+		noscript := `<noscript>` + tag + `</noscript>`
+		return deferred + "\n" + noscript, nil
+	})
+}
+
+// addOrReplaceAttr sets an HTML attribute value in a tag, replacing it if present.
+func addOrReplaceAttr(tag, attr, value string) string {
+	re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(attr) + `\s*=\s*["'][^"']*["']`)
+	quoted := attr + `="` + value + `"`
+	if re.MatchString(tag) {
+		return re.ReplaceAllString(tag, quoted)
+	}
+	// Insert before the closing > of the tag.
+	if idx := strings.LastIndex(tag, ">"); idx != -1 {
+		return tag[:idx] + " " + quoted + tag[idx:]
+	}
+	return tag
 }
 
 func inlineLocalScripts(doc, srcRoot string) (string, error) {
