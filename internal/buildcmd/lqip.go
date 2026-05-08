@@ -150,7 +150,7 @@ func buildLQIPTag(tag, originalSrc, lqipURI string) string {
 			closeIdx := strings.Index(tag[end:], q)
 			if closeIdx >= 0 {
 				existing := tag[end : end+closeIdx]
-				newClass := strings.TrimSpace(existing+" lqip-pending")
+				newClass := strings.TrimSpace(existing + " lqip-pending")
 				tag = tag[:end] + newClass + tag[end+closeIdx:]
 				return tag
 			}
