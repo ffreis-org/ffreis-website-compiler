@@ -7,7 +7,6 @@ on:
 
 jobs:
   smoke:
-    timeout-minutes: 15
     uses: FelipeFuhr/ffreis-workflows-general/.github/workflows/general-http-smoke.yml@01e2b12e992621fecf074b8a202f66044196f3bf
     with:
       paths: |-
