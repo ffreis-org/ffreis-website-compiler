@@ -27,18 +27,21 @@ concurrency:
 
 jobs:
   mod-tidy:
+    timeout-minutes: 15
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-mod-tidy-check.yml@b253b2329a11552b6276781c56f6dc6fd1718710
     with:
       go-version: "1.25.8"
       working-directory: "."
 
   fmt:
+    timeout-minutes: 15
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fmt.yml@b253b2329a11552b6276781c56f6dc6fd1718710
     with:
       go-version: "1.25.8"
       working-directory: "."
 
   lint:
+    timeout-minutes: 15
     needs: [fmt]
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-lint.yml@b253b2329a11552b6276781c56f6dc6fd1718710
     with:
@@ -46,6 +49,8 @@ jobs:
       working-directory: "."
 
   test:
+    timeout-minutes: 30
+    if: ${{ !github.event.pull_request.draft }}
     needs: [fmt]
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@b253b2329a11552b6276781c56f6dc6fd1718710
     with:
@@ -54,6 +59,8 @@ jobs:
       run-govulncheck: false
 
   integration:
+    timeout-minutes: 30
+    if: ${{ !github.event.pull_request.draft }}
     needs: [fmt]
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@b253b2329a11552b6276781c56f6dc6fd1718710
     with:
