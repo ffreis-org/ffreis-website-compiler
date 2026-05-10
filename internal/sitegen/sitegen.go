@@ -1,6 +1,7 @@
 package sitegen
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -104,23 +105,6 @@ func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
 	})
 
 	return pages, nil
-}
-
-// LoadPageTemplates keeps backwards compatibility with older call sites.
-func LoadPageTemplates(_ string) ([]PageTemplate, error) {
-	newRoot := filepath.Join("src", "templates")
-	if dirExists(newRoot) {
-		return LoadPageTemplatesFromRoot(newRoot)
-	}
-	return LoadPageTemplatesFromRoot("templates")
-}
-
-func LoadSiteDataFromTemplatesRoot(templatesRoot string) (map[string]any, error) {
-	result, err := LoadSiteData(templatesRoot, "")
-	if err != nil {
-		return nil, err
-	}
-	return result.Data, nil
 }
 
 func LoadSiteData(templatesRoot, overrideSource string) (SiteDataLoadResult, error) {
@@ -371,6 +355,98 @@ func NewTemplateData(pageName string, siteData any) map[string]any {
 		"PageName": pageName,
 		"SiteData": siteData,
 	}
+}
+
+// SiteInputs bundles the three loaded artifacts that every command needs.
+type SiteInputs struct {
+	Pages                  []PageTemplate
+	SiteDataResult         SiteDataLoadResult
+	SiteDataContractResult SiteDataContractLoadResult
+}
+
+// LoadSiteInputs loads templates, site data, and the site data contract from
+// templatesDir. It does not perform any validation; callers decide what to
+// validate based on their requirements.
+func LoadSiteInputs(templatesDir, siteDataSource string) (SiteInputs, error) {
+	pages, err := LoadPageTemplatesFromRoot(templatesDir)
+	if err != nil {
+		return SiteInputs{}, fmt.Errorf("loading templates: %w", err)
+	}
+	siteDataResult, err := LoadSiteData(templatesDir, siteDataSource)
+	if err != nil {
+		return SiteInputs{}, fmt.Errorf("loading site data: %w", err)
+	}
+	contractResult, err := LoadSiteDataContract(templatesDir)
+	if err != nil {
+		return SiteInputs{}, fmt.Errorf("loading site data contract: %w", err)
+	}
+	return SiteInputs{
+		Pages:                  pages,
+		SiteDataResult:         siteDataResult,
+		SiteDataContractResult: contractResult,
+	}, nil
+}
+
+// RenderPages executes every page template and returns a map of page name →
+// rendered HTML string.
+func RenderPages(pages []PageTemplate, siteData map[string]any) (map[string]string, error) {
+	renderedPages := make(map[string]string, len(pages))
+	for _, page := range pages {
+		var rendered bytes.Buffer
+		if err := page.Tmpl.ExecuteTemplate(&rendered, "layout", NewTemplateData(page.Name, siteData)); err != nil {
+			return nil, fmt.Errorf("rendering %s.html: %w", page.Name, err)
+		}
+		renderedPages[page.Name] = rendered.String()
+	}
+	return renderedPages, nil
+}
+
+// ValidateSiteDataAndUsage validates site data against its contract, then
+// checks that every contract path is referenced by at least one template.
+func ValidateSiteDataAndUsage(pages []PageTemplate, siteDataResult SiteDataLoadResult, siteDataContractResult SiteDataContractLoadResult) error {
+	if err := ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
+		return fmt.Errorf("validating site data against contract: %w", err)
+	}
+
+	contract := siteDataContractResult.Contract
+	if len(contract.Required) == 0 && len(contract.Allowed) == 0 {
+		return nil
+	}
+
+	usedPaths, err := TraceSiteDataUsage(pages, siteDataResult.Data)
+	if err != nil {
+		return fmt.Errorf("tracing site data usage: %w", err)
+	}
+	if err := ValidateSiteDataContractUsage(contract, usedPaths); err != nil {
+		return fmt.Errorf("validating site data contract usage: %w", err)
+	}
+	return nil
+}
+
+// ValidateSiteDataAndUsageFromRoot is like ValidateSiteDataAndUsage but loads
+// page templates lazily from templatesRoot (only when the contract is non-empty).
+func ValidateSiteDataAndUsageFromRoot(templatesRoot string, siteDataResult SiteDataLoadResult, siteDataContractResult SiteDataContractLoadResult) error {
+	if err := ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
+		return fmt.Errorf("validating site data against contract: %w", err)
+	}
+
+	contract := siteDataContractResult.Contract
+	if len(contract.Required) == 0 && len(contract.Allowed) == 0 {
+		return nil
+	}
+
+	pages, err := LoadPageTemplatesFromRoot(templatesRoot)
+	if err != nil {
+		return fmt.Errorf("loading templates for site data usage validation: %w", err)
+	}
+	usedPaths, err := TraceSiteDataUsage(pages, siteDataResult.Data)
+	if err != nil {
+		return fmt.Errorf("tracing site data usage: %w", err)
+	}
+	if err := ValidateSiteDataContractUsage(contract, usedPaths); err != nil {
+		return fmt.Errorf("validating site data contract usage: %w", err)
+	}
+	return nil
 }
 
 func readDataSource(source string) ([]byte, error) {

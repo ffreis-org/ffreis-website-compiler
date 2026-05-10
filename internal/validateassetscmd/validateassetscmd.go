@@ -8,6 +8,7 @@ import (
 
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/cmdutil"
+	"ffreis-website-compiler/internal/sitegen"
 )
 
 func Run(args []string, logger *slog.Logger) error {
@@ -25,12 +26,16 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 
-	pages, siteDataResult, siteDataContractResult, err := cmdutil.LoadAndValidateSiteData(logger, templatesDir, opts.siteDataSource)
+	inputs, err := sitegen.LoadSiteInputs(templatesDir, opts.siteDataSource)
 	if err != nil {
 		return err
 	}
+	cmdutil.LogSiteDataOverride(logger, inputs.SiteDataResult)
+	if err := sitegen.ValidateSiteDataAndUsage(inputs.Pages, inputs.SiteDataResult, inputs.SiteDataContractResult); err != nil {
+		return err
+	}
 
-	renderedPages, err := cmdutil.RenderPages(pages, siteDataResult.Data)
+	renderedPages, err := sitegen.RenderPages(inputs.Pages, inputs.SiteDataResult.Data)
 	if err != nil {
 		return err
 	}
@@ -45,12 +50,11 @@ func Run(args []string, logger *slog.Logger) error {
 		"website_root", opts.websiteRoot,
 		"assets_dir", assetsDir,
 		"templates_dir", templatesDir,
-		"site_data_source", cmdutil.FirstNonEmpty(siteDataResult.Source, siteDataResult.DefaultPath),
-		"site_data_layers", siteDataResult.Layers,
+		"site_data_source", cmdutil.FirstNonEmpty(inputs.SiteDataResult.Source, inputs.SiteDataResult.DefaultPath),
+		"site_data_layers", inputs.SiteDataResult.Layers,
 		"used_css", len(result.UsedCSS),
 		"used_js", len(result.UsedJS),
 	)
-	_ = siteDataContractResult
 	return nil
 }
 

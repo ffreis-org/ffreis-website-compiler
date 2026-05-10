@@ -141,7 +141,7 @@ func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource 
 	}
 
 	cmdutil.LogSiteDataOverride(logger, siteDataResult)
-	if err := cmdutil.ValidateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
+	if err := sitegen.ValidateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
 		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
 	}
 
@@ -168,7 +168,7 @@ func maybeValidateAssets(opts validateSanityOptions, assetsDir string, pages []s
 		return nil
 	}
 
-	renderedPages, err := cmdutil.RenderPages(pages, siteData)
+	renderedPages, err := sitegen.RenderPages(pages, siteData)
 	if err != nil {
 		return err
 	}

@@ -85,7 +85,7 @@ func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource 
 		return nil, sitegen.SiteDataLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
 	}
 	cmdutil.LogSiteDataOverride(logger, siteDataResult)
-	if err := cmdutil.ValidateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
+	if err := sitegen.ValidateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
 		return nil, sitegen.SiteDataLoadResult{}, err
 	}
 	if enableSanity {
@@ -97,7 +97,7 @@ func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource 
 }
 
 func validateAssetUsage(assetsRoot string, pages []sitegen.PageTemplate, siteData map[string]any) error {
-	renderedPages, err := cmdutil.RenderPages(pages, siteData)
+	renderedPages, err := sitegen.RenderPages(pages, siteData)
 	if err != nil {
 		return err
 	}

@@ -80,7 +80,7 @@ func loadAndValidateSiteData(logger *slog.Logger, templatesRoot, siteDataSource 
 
 	cmdutil.LogSiteDataOverride(logger, siteDataResult)
 
-	if err := cmdutil.ValidateSiteDataAndUsageFromRoot(templatesRoot, siteDataResult, siteDataContractResult); err != nil {
+	if err := sitegen.ValidateSiteDataAndUsageFromRoot(templatesRoot, siteDataResult, siteDataContractResult); err != nil {
 		return sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
 	}
 

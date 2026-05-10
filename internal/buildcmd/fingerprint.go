@@ -124,7 +124,7 @@ func fingerprintLocalAssets(html, assetsDir string) (string, map[string]string, 
 		return "", nil, fmt.Errorf("fingerprinting preload href: %w", err)
 	}
 
-	// <link rel="icon" href="...">
+	// <link rel="icon" href="..."> and <link rel="apple-touch-icon" href="...">
 	html, err = replaceTagWith(html, iconTagRE, func(tag string, refs []string) (string, error) {
 		href := refs[1]
 		newHref, e := resolve(href)
@@ -132,6 +132,16 @@ func fingerprintLocalAssets(html, assetsDir string) (string, map[string]string, 
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("fingerprinting icon href: %w", err)
+	}
+
+	// <link rel="manifest" href="...">
+	html, err = replaceTagWith(html, manifestTagRE, func(tag string, refs []string) (string, error) {
+		href := refs[1]
+		newHref, e := resolve(href)
+		return rewriteAttr(tag, "href", href, newHref), e
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("fingerprinting manifest href: %w", err)
 	}
 
 	// <script src="...">

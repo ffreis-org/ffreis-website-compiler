@@ -99,7 +99,8 @@ Rewrites all local asset references to content-hashed filenames:
 The packer (`ffreis-website-packer`) assigns `Cache-Control: immutable` (1 year) to
 files whose names match `[._-][a-f0-9]{8,}[._-]`, so fingerprinted assets are
 automatically cached long-term. Fingerprinting covers: `<img src>`, `<img data-src>`
-(LQIP), `<link rel="preload" href>`, `<link rel="icon" href>`, `<script src>`, and
+(LQIP), `<link rel="preload" href>`, `<link rel="icon" href>` (also matches
+`apple-touch-icon`), `<link rel="manifest" href>`, `<script src>`, and
 `url()` inside inline `<style>` blocks. Data URIs and external URLs are left unchanged.
 
 Hashed file copies are written to the output directory alongside the originals
@@ -109,6 +110,51 @@ Hashed file copies are written to the output directory alongside the originals
 
 Optional; downloads external CSS/JS/images and rewrites URLs to local copies.
 Also processes `url()` references inside inline `<style>` blocks.
+
+## Blog post processing (`-posts-dir` flag)
+
+When `-posts-dir <path>` is passed to `build-static`, the compiler processes Markdown
+blog posts in addition to the normal page build:
+
+**Input layout expected in `<posts-dir>`:**
+```
+posts-dir/
+  <slug>/
+    index.md        # YAML frontmatter + Markdown body
+    images/         # post images; copied to dist/blog/<slug>/images/
+```
+
+**What it generates:**
+- `dist/blog/<slug>/index.html` — rendered post page (uses `src/templates/pages/post.gohtml`)
+- `dist/blog/feed.xml` — RSS 2.0 feed for Substack import
+- Replaces `pages.blog.posts` in site data with post metadata (injected after contract validation)
+
+**Template data for post pages:** In addition to the standard `PageName` and `SiteData`,
+post pages receive a `CurrentPost` map with: `title`, `date`, `summary`, `thumbnail`,
+`canonical_url`, `tags`, `body_html`. The `post.gohtml` template accesses these via
+`.CurrentPost`.
+
+**Key packages:**
+- `internal/posts/posts.go` — `LoadPostsDir`, `CopyPostImages`
+- `internal/rss/rss.go` — `GenerateRSS`
+- `internal/buildcmd/posts.go` — `injectPostsBlogList`, `writePostPages`, `writeRSSFeed`
+
+**New dependency:** `github.com/yuin/goldmark` + `github.com/yuin/goldmark-meta`
+for Markdown rendering and frontmatter parsing.
+
+## Template extensibility blocks
+
+Two `{{block}}` overrides in `head.gohtml` allow page templates to inject custom
+meta tags without duplicating the head partial:
+
+- `{{block "page_canonical" .}}` — overrides the `<meta name="description">` and
+  `<link rel="canonical">` tags. The `post.gohtml` template overrides this to use
+  `.CurrentPost` data instead of `pages.post.*` from site data.
+
+- `{{block "page_og_meta" .}}` — overrides the full og:/twitter: meta block. The
+  `post.gohtml` template overrides this with article-specific OG tags and structured data.
+
+Both blocks receive `.` (the full template data map) as their pipeline.
 
 ## Keeping this file current
 
