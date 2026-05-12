@@ -1,7 +1,6 @@
 package cmdutil
 
 import (
-	"bytes"
 	"fmt"
 	"log/slog"
 	"os"
@@ -61,26 +60,6 @@ func LogSiteDataOverride(logger *slog.Logger, siteDataResult sitegen.SiteDataLoa
 	)
 }
 
-func ValidateSiteDataAndUsage(pages []sitegen.PageTemplate, siteDataResult sitegen.SiteDataLoadResult, siteDataContractResult sitegen.SiteDataContractLoadResult) error {
-	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
-		return fmt.Errorf("validating site data against contract: %w", err)
-	}
-
-	contract := siteDataContractResult.Contract
-	if len(contract.Required) == 0 && len(contract.Allowed) == 0 {
-		return nil
-	}
-
-	usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
-	if err != nil {
-		return fmt.Errorf("tracing site data usage: %w", err)
-	}
-	if err := sitegen.ValidateSiteDataContractUsage(contract, usedPaths); err != nil {
-		return fmt.Errorf("validating site data contract usage: %w", err)
-	}
-	return nil
-}
-
 func ResolveTemplatesRoot(websiteRoot string) (string, error) {
 	newTemplates := filepath.Join(websiteRoot, "src", "templates")
 	if DirExists(newTemplates) {
@@ -98,68 +77,3 @@ func ResolveTemplatesRoot(websiteRoot string) (string, error) {
 	)
 }
 
-// ValidateSiteDataAndUsageFromRoot is like ValidateSiteDataAndUsage but loads
-// page templates lazily from templatesRoot (only when the contract has required/allowed keys).
-func ValidateSiteDataAndUsageFromRoot(templatesRoot string, siteDataResult sitegen.SiteDataLoadResult, siteDataContractResult sitegen.SiteDataContractLoadResult) error {
-	if err := sitegen.ValidateSiteData(siteDataResult.Data, siteDataContractResult.Contract); err != nil {
-		return fmt.Errorf("validating site data against contract: %w", err)
-	}
-
-	contract := siteDataContractResult.Contract
-	if len(contract.Required) == 0 && len(contract.Allowed) == 0 {
-		return nil
-	}
-
-	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesRoot)
-	if err != nil {
-		return fmt.Errorf("loading templates for site data usage validation: %w", err)
-	}
-	usedPaths, err := sitegen.TraceSiteDataUsage(pages, siteDataResult.Data)
-	if err != nil {
-		return fmt.Errorf("tracing site data usage: %w", err)
-	}
-	if err := sitegen.ValidateSiteDataContractUsage(contract, usedPaths); err != nil {
-		return fmt.Errorf("validating site data contract usage: %w", err)
-	}
-	return nil
-}
-
-func LoadAndValidateSiteData(logger *slog.Logger, templatesDir, siteDataSource string) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
-	pages, err := sitegen.LoadPageTemplatesFromRoot(templatesDir)
-	if err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading templates: %w", err)
-	}
-	siteDataResult, err := sitegen.LoadSiteData(templatesDir, siteDataSource)
-	if err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data: %w", err)
-	}
-	siteDataContractResult, err := sitegen.LoadSiteDataContract(templatesDir)
-	if err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, fmt.Errorf("loading site data contract: %w", err)
-	}
-	LogSiteDataOverride(logger, siteDataResult)
-	if err := ValidateSiteDataAndUsage(pages, siteDataResult, siteDataContractResult); err != nil {
-		return nil, sitegen.SiteDataLoadResult{}, sitegen.SiteDataContractLoadResult{}, err
-	}
-	return pages, siteDataResult, siteDataContractResult, nil
-}
-
-const recaptchaTestSiteKey = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
-
-func RenderPages(pages []sitegen.PageTemplate, siteData map[string]any) (map[string]string, error) {
-	// Inject the official Google test key when recaptcha_site_key is absent.
-	// Production site.yaml sets the real key; local dev and builds without a key
-	// get the test key automatically so reCAPTCHA loads on any domain.
-	if _, ok := siteData["recaptcha_site_key"]; !ok {
-		siteData["recaptcha_site_key"] = recaptchaTestSiteKey
-	}
-	renderedPages := make(map[string]string, len(pages))
-	for _, page := range pages {
-		var rendered bytes.Buffer
-		if err := page.Tmpl.ExecuteTemplate(&rendered, "layout", sitegen.NewTemplateData(page.Name, siteData)); err != nil {
-			return nil, fmt.Errorf("rendering %s.html: %w", page.Name, err)
-		}
-		renderedPages[page.Name] = rendered.String()
-	}
-	return renderedPages, nil
-}

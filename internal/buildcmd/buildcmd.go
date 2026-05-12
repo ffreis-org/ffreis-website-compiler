@@ -21,6 +21,7 @@ import (
 
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/cmdutil"
+	"ffreis-website-compiler/internal/posts"
 	"ffreis-website-compiler/internal/sitegen"
 	"ffreis-website-compiler/internal/sitemap"
 )
@@ -39,6 +40,7 @@ var (
 	scriptTagRE     = regexp.MustCompile(`(?is)<script\s+[^>]*src=["']([^"']+)["'][^>]*>\s*</script>`)
 	imgTagRE        = regexp.MustCompile(`(?is)<img\s+[^>]*src=["']([^"']+)["'][^>]*>`)
 	iconTagRE       = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["'][^"']*icon[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>`)
+	manifestTagRE   = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["']manifest["'][^>]*href=["']([^"']+)["'][^>]*>`)
 	cssURLRE        = regexp.MustCompile(`url\(\s*['"]?([^'"\)]+)['"]?\s*\)`)
 	cssImportRE     = regexp.MustCompile(`(?is)@import\s+(?:url\(\s*)?['"]?([^'"\)\s;]+)['"]?\s*\)?([^;]*);`)
 )
@@ -80,10 +82,34 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 
+	// Load and process blog posts (after contract validation so injected data
+	// doesn't need contract entries; posts data is compiler-managed).
+	var loadedPosts []posts.Post
+	var postTemplate *sitegen.PageTemplate
+	if opts.postsDir != "" {
+		loadedPosts, err = posts.LoadPostsDir(opts.postsDir)
+		if err != nil {
+			return fmt.Errorf("loading blog posts: %w", err)
+		}
+		if err := posts.CopyPostImages(loadedPosts, opts.outDir); err != nil {
+			return fmt.Errorf("copying post images: %w", err)
+		}
+		injectPostsBlogList(siteDataResult.Data, loadedPosts)
+	}
+
+	// Save a reference to the post template before filterInternalPages removes it.
+	for i := range pages {
+		if pages[i].Name == "post" {
+			tmp := pages[i]
+			postTemplate = &tmp
+			break
+		}
+	}
+
 	// Render all pages (including internal ones) so their CSS/JS assets are
 	// seen as "used" by the asset validator. Internal pages are filtered out
 	// from disk output and sitemap after validation.
-	renderedPages, err := cmdutil.RenderPages(pages, siteDataResult.Data)
+	renderedPages, err := sitegen.RenderPages(pages, siteDataResult.Data)
 	if err != nil {
 		return err
 	}
@@ -96,6 +122,17 @@ func Run(args []string, logger *slog.Logger) error {
 	if err := writePages(logger, opts, pages, assetsDir, renderedPages, mirrorer); err != nil {
 		return err
 	}
+
+	// Render individual blog post pages and the RSS feed.
+	if postTemplate != nil && len(loadedPosts) > 0 {
+		if err := writePostPages(logger, opts, *postTemplate, loadedPosts, siteDataResult.Data, assetsDir, mirrorer); err != nil {
+			return fmt.Errorf("writing post pages: %w", err)
+		}
+		if err := writeRSSFeed(opts.outDir, siteDataResult.Data, loadedPosts); err != nil {
+			return fmt.Errorf("writing rss feed: %w", err)
+		}
+	}
+
 	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages); err != nil {
 		return err
 	}
@@ -112,6 +149,7 @@ type buildOptions struct {
 	sitemapBaseURL       string
 	siteDataSource       string
 	outDir               string
+	postsDir             string
 	copyAssets           bool
 	inlineAssets         bool
 	mirrorExternalAssets bool
@@ -144,6 +182,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
 	fs.BoolVar(&opts.strictContract, "strict-contract", true, "fail if any allowed contract path is not referenced by any template (disable for local dev with in-progress templates)")
 	fs.BoolVar(&opts.cleanURLs, "clean-urls", false, "output each page as <name>/index.html instead of <name>.html for extension-free URLs; updates sitemap accordingly")
+	fs.StringVar(&opts.postsDir, "posts-dir", "", "path to blog posts directory (posts/<slug>/index.md layout); enables Markdown blog post generation and RSS feed when set")
 
 	if err := fs.Parse(args); err != nil {
 		return buildOptions{}, err
