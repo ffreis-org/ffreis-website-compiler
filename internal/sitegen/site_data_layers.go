@@ -58,6 +58,14 @@ func listYAMLLayersInDir(dir string) ([]string, error) {
 		files = append(files, filepath.Join(dir, name))
 	}
 	sort.Strings(files)
+
+	// Also include files from a site.d/ subdirectory, sorted after top-level files.
+	subDir := filepath.Join(dir, "site.d")
+	subLayers, err := listYAMLLayersInDirIfExists(subDir)
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, subLayers...)
 	return files, nil
 }
 

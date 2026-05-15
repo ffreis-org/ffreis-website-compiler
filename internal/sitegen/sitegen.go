@@ -147,41 +147,55 @@ func LoadSiteData(templatesRoot, overrideSource string) (SiteDataLoadResult, err
 }
 
 func loadSiteDataFromOverride(source, defaultPath string, defaultFound bool) (SiteDataLoadResult, error) {
-	if isLocalDirSource(source) {
-		layers, err := listYAMLLayersInDir(source)
-		if err != nil {
-			return SiteDataLoadResult{}, err
-		}
-		merged, err := loadAndMergeSiteDataLayers(layers)
-		if err != nil {
-			return SiteDataLoadResult{}, err
-		}
-		return SiteDataLoadResult{
-			Data:             merged,
-			Source:           source,
-			Layers:           layers,
-			DefaultPath:      defaultPath,
-			UsedOverride:     true,
-			DefaultPathFound: defaultFound,
-		}, nil
-	}
-
-	raw, err := readDataSource(source)
-	if err != nil {
-		return SiteDataLoadResult{}, err
-	}
-	siteData, err := parseSiteData(raw)
+	data, layers, err := loadLayersFromSource(source)
 	if err != nil {
 		return SiteDataLoadResult{}, err
 	}
 	return SiteDataLoadResult{
-		Data:             siteData,
+		Data:             data,
 		Source:           source,
-		Layers:           []string{source},
+		Layers:           layers,
 		DefaultPath:      defaultPath,
 		UsedOverride:     true,
 		DefaultPathFound: defaultFound,
 	}, nil
+}
+
+func loadLayersFromSource(source string) (map[string]any, []string, error) {
+	if parts := strings.Split(source, "|"); len(parts) > 1 {
+		return loadMultiDirSource(parts)
+	}
+	if isLocalDirSource(source) {
+		layers, err := listYAMLLayersInDir(source)
+		if err != nil {
+			return nil, nil, err
+		}
+		merged, err := loadAndMergeSiteDataLayers(layers)
+		return merged, layers, err
+	}
+	raw, err := readDataSource(source)
+	if err != nil {
+		return nil, nil, err
+	}
+	siteData, err := parseSiteData(raw)
+	return siteData, []string{source}, err
+}
+
+func loadMultiDirSource(parts []string) (map[string]any, []string, error) {
+	var allLayers []string
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		layers, err := listYAMLLayersInDir(part)
+		if err != nil {
+			return nil, nil, err
+		}
+		allLayers = append(allLayers, layers...)
+	}
+	merged, err := loadAndMergeSiteDataLayers(allLayers)
+	return merged, allLayers, err
 }
 
 func loadBaseSiteData(defaultFound bool, defaultPath string, overlayLayers []string) (base map[string]any, baseOrigin string, layers []string, err error) {

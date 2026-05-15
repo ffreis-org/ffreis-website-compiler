@@ -7,15 +7,30 @@ import (
 	"os"
 	"path/filepath"
 
+	"ffreis-website-compiler/internal/pagination"
 	"ffreis-website-compiler/internal/posts"
 	"ffreis-website-compiler/internal/rss"
 	"ffreis-website-compiler/internal/sitegen"
+	"ffreis-website-compiler/internal/sitemap"
 )
 
+// postToMap converts a Post to the map[string]any shape expected by templates.
+func postToMap(p posts.Post) map[string]any {
+	return map[string]any{
+		"title":     p.Meta.Title,
+		"date":      p.Meta.Date,
+		"summary":   p.Meta.Summary,
+		"href":      "/blog/" + p.Meta.Slug + "/",
+		"thumbnail": p.Meta.Thumbnail,
+	}
+}
+
 // injectPostsBlogList replaces pages.blog.posts in siteData with metadata
-// derived from the loaded posts. Called after contract validation so the
-// injected data does not need contract entries.
-func injectPostsBlogList(siteData map[string]any, postList []posts.Post) {
+// derived from the loaded posts. previewN controls how many items are stored
+// in posts (used by the home-page carousel); pass 0 to store all.
+// Called after contract validation so the injected data does not need
+// contract entries.
+func injectPostsBlogList(siteData map[string]any, postList []posts.Post, previewN int) {
 	pagesData, _ := siteData["pages"].(map[string]any)
 	if pagesData == nil {
 		return
@@ -27,15 +42,73 @@ func injectPostsBlogList(siteData map[string]any, postList []posts.Post) {
 
 	items := make([]any, 0, len(postList))
 	for _, p := range postList {
-		items = append(items, map[string]any{
-			"title":     p.Meta.Title,
-			"date":      p.Meta.Date,
-			"summary":   p.Meta.Summary,
-			"href":      "/blog/" + p.Meta.Slug + "/",
-			"thumbnail": p.Meta.Thumbnail,
+		items = append(items, postToMap(p))
+	}
+
+	// posts key keeps the preview slice for the home carousel.
+	preview := items
+	if previewN > 0 && previewN < len(items) {
+		preview = items[:previewN]
+	}
+	blogData["posts"] = preview
+}
+
+// writeBlogPaginatedPages generates /blog/index.html (page 1) and
+// /blog/page/N/index.html for each subsequent page.
+func writeBlogPaginatedPages(
+	logger *slog.Logger,
+	opts buildOptions,
+	blogTpl sitegen.PageTemplate,
+	postList []posts.Post,
+	siteData map[string]any,
+	assetsDir string,
+	mirrorer *externalAssetMirrorer,
+) ([]sitemap.URLItem, error) {
+	allItems := make([]any, len(postList))
+	for i, p := range postList {
+		allItems[i] = postToMap(p)
+	}
+
+	pages := pagination.Paginate(allItems, opts.itemsPerPage, "/blog")
+	allToCopy := make(map[string]string)
+	var sitemapURLs []sitemap.URLItem
+
+	for _, pg := range pages {
+		pageData := shallowCopySiteDataForSection(siteData, "blog")
+		injectPaginatedSection(pageData, "blog", pg, opts.itemsPerPage)
+
+		var rendered bytes.Buffer
+		if err := blogTpl.Tmpl.ExecuteTemplate(&rendered, "layout",
+			sitegen.NewTemplateData("blog", pageData)); err != nil {
+			return nil, fmt.Errorf("rendering blog page %d: %w", pg.Number, err)
+		}
+
+		htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, mirrorer)
+		if err != nil {
+			return nil, fmt.Errorf("transforming blog page %d: %w", pg.Number, err)
+		}
+		for k, v := range toCopy {
+			allToCopy[k] = v
+		}
+
+		target := resolvePagedTarget(opts.outDir, "blog", pg.Number)
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return nil, fmt.Errorf("creating dir for blog page %d: %w", pg.Number, err)
+		}
+		if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil { //nolint:gosec
+			return nil, fmt.Errorf(errFmtWriting, target, err)
+		}
+		logger.Info("generated blog page", "page", pg.Number, "target", target)
+
+		sitemapURLs = append(sitemapURLs, sitemap.URLItem{
+			Path: pagination.PageHref("/blog", pg.Number),
 		})
 	}
-	blogData["posts"] = items
+
+	if err := writeHashedAssets(opts.outDir, assetsDir, allToCopy); err != nil {
+		return nil, err
+	}
+	return sitemapURLs, nil
 }
 
 // writePostPages renders and writes one HTML file per post using the post template.

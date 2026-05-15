@@ -32,3 +32,6 @@ go.work.sum
 # .vscode/
 cmd/build-static/build-static
 cmd/website-compiler/website-compiler
+
+scripts/hooks/
+scripts/bootstrap_lefthook.sh

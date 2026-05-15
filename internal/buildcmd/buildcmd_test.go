@@ -65,9 +65,12 @@ func TestRun_GeneratesHelloWorldOutput(t *testing.T) {
 		}
 	}
 
-	cssPath := filepath.Join(outDir, "css", fileMainCSS)
-	if _, err := os.Stat(cssPath); err != nil {
-		t.Fatalf("expected copied css asset %s: %v", cssPath, err)
+	// CSS from <head> is inlined as a <style> block; the original file is not copied.
+	if !strings.Contains(html, "<style>") {
+		t.Fatalf("expected inlined <style> block in rendered html")
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "css", fileMainCSS)); !os.IsNotExist(err) {
+		t.Fatalf("expected original css not to be copied to dist, got err=%v", err)
 	}
 
 	sitemapPath := filepath.Join(outDir, "sitemap.xml")
@@ -308,12 +311,11 @@ func TestRun_MirrorsExternalAssetsIntoOutput(t *testing.T) {
 	indexPath := filepath.Join(outDir, fileIndexHTML)
 	indexHTML := string(mustReadFile(t, indexPath))
 	assertNoExternalRefs(t, fileIndexHTML, indexHTML, server.URL)
-	assertContainsAll(t, fileIndexHTML, indexHTML, []string{`href="/external/`, `src="/external/`})
-
-	localCSSPath := filepath.Join(outDir, "css", fileMainCSS)
-	localCSS := string(mustReadFile(t, localCSSPath))
-	assertNoExternalRefs(t, "css/main.css", localCSS, server.URL)
-	assertContainsAll(t, "css/main.css", localCSS, []string{`url("/external/`})
+	// head CSS is inlined as a <style> block; the original css file is not copied.
+	assertContainsAll(t, fileIndexHTML, indexHTML, []string{`href="/external/`, `src="/external/`, `url("/external/`})
+	if _, err := os.Stat(filepath.Join(outDir, "css", fileMainCSS)); !os.IsNotExist(err) {
+		t.Fatalf("expected original css not to be copied to dist, got err=%v", err)
+	}
 
 	mustStat(t, filepath.Join(outDir, "external"))
 
@@ -323,6 +325,120 @@ func TestRun_MirrorsExternalAssetsIntoOutput(t *testing.T) {
 	}
 	assertNoExternalRefs(t, "mirrored css", mirroredCSS, server.URL)
 	assertContainsAll(t, "mirrored css", mirroredCSS, []string{`url("/external/`})
+}
+
+func TestRun_InlineBodyCSS(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "css"))
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):            mainCSSContent,
+		filepath.Join(websiteRoot, "src", "assets", "css", "widget.css"):           ".widget { color: blue; }\n",
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):            "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML):  `{{define "page"}}<p>hello</p>{{end}}`,
+		// widget.css is in the body → normally deferred; with -inline-body-css it becomes <style>.
+		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`,
+		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>` +
+			`<link rel="stylesheet" href="/css/widget.css">{{template "page" .}}</body></html>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	args := []string{
+		flagWebsiteRoot, websiteRoot,
+		flagOut, outDir,
+		"-inline-body-css",
+	}
+	if err := Run(args, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	html := string(mustReadFile(t, filepath.Join(outDir, fileAgendaHTML)))
+	// Body CSS should be inlined as a <style> block, not deferred via media="print".
+	if strings.Contains(html, `media="print"`) {
+		t.Fatalf("expected body CSS inlined, still has deferred media=print pattern")
+	}
+	if !strings.Contains(html, "color:blue") && !strings.Contains(html, "color: blue") {
+		t.Fatalf("expected widget CSS content inlined in HTML")
+	}
+	// No external CSS files should remain in dist.
+	if _, err := os.Stat(filepath.Join(outDir, "css")); !os.IsNotExist(err) {
+		t.Fatalf("expected no css/ dir in dist when all CSS is inlined, got err=%v", err)
+	}
+}
+
+func TestRun_EmbedFonts(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "fonts"))
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "fonts", "inter.woff2"):        "woff2data",
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):            `@font-face { src: url("/fonts/inter.woff2"); }`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):            "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML):  `{{define "page"}}<p>hello</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	args := []string{
+		flagWebsiteRoot, websiteRoot,
+		flagOut, outDir,
+		"-embed-fonts",
+	}
+	if err := Run(args, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	html := string(mustReadFile(t, filepath.Join(outDir, fileAgendaHTML)))
+	// Font should be embedded as a data URI, not a root-relative path.
+	if strings.Contains(html, `url("/fonts/inter.woff2")`) {
+		t.Fatalf("expected font embedded as data URI, still has path reference")
+	}
+	if !strings.Contains(html, "data:font/woff2;base64,") {
+		t.Fatalf("expected base64 font data URI in HTML, got: %s", html)
+	}
+	// Font file itself should not be in dist (it's embedded).
+	if _, err := os.Stat(filepath.Join(outDir, "fonts", "inter.woff2")); !os.IsNotExist(err) {
+		t.Fatalf("expected font file not copied to dist when embedded, got err=%v", err)
+	}
+}
+
+func TestRun_OriginalCSSNotCopiedToDist(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS): mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML): "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>hello</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	// Original (non-fingerprinted) CSS must not exist in dist.
+	if _, err := os.Stat(filepath.Join(outDir, "css", fileMainCSS)); !os.IsNotExist(err) {
+		t.Fatalf("expected original css not to be in dist, got err=%v", err)
+	}
+	// CSS from head is inlined; the page should have a <style> block.
+	html := string(mustReadFile(t, filepath.Join(outDir, fileAgendaHTML)))
+	if !strings.Contains(html, "<style>") {
+		t.Fatalf("expected inlined <style> block, got: %s", html)
+	}
+}
+
+func TestRun_LDDirStillCopied(t *testing.T) {
+	websiteRoot := newTestWebsiteRoot(t)
+	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "ld"))
+	testutil.WriteFiles(t, map[string]string{
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "assets", "ld", "org.json"):             `{"@context":"https://schema.org","@type":"Organization"}`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>hello</p>{{end}}`,
+	})
+
+	outDir := t.TempDir()
+	if err := Run([]string{flagWebsiteRoot, websiteRoot, flagOut, outDir}, testutil.DiscardLogger()); err != nil {
+		t.Fatalf(buildRunFailed, err)
+	}
+
+	mustStat(t, filepath.Join(outDir, "ld", "org.json"))
 }
 
 func newMirrorAssetsTestServer(t *testing.T) *httptest.Server {

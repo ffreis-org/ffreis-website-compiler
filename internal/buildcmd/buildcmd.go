@@ -21,7 +21,9 @@ import (
 
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/cmdutil"
+	"ffreis-website-compiler/internal/courses"
 	"ffreis-website-compiler/internal/posts"
+	"ffreis-website-compiler/internal/projects"
 	"ffreis-website-compiler/internal/sitegen"
 	"ffreis-website-compiler/internal/sitemap"
 )
@@ -32,6 +34,14 @@ const (
 	extWoff2    = ".woff2"
 
 	errFmtWriting = "writing %s: %w"
+
+	// svgInlineSizeLimit is the maximum byte size for an SVG to be inlined as
+	// <svg> in HTML. Larger SVGs stay external and are fingerprinted instead.
+	svgInlineSizeLimit = 8 * 1024
+
+	// defaultJSInlineThreshold is the default byte limit for inlining <script src>
+	// files as <script> blocks. Files at or above this size stay external.
+	defaultJSInlineThreshold = 8 * 1024
 )
 
 var (
@@ -43,6 +53,14 @@ var (
 	manifestTagRE   = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["']manifest["'][^>]*href=["']([^"']+)["'][^>]*>`)
 	cssURLRE        = regexp.MustCompile(`url\(\s*['"]?([^'"\)]+)['"]?\s*\)`)
 	cssImportRE     = regexp.MustCompile(`(?is)@import\s+(?:url\(\s*)?['"]?([^'"\)\s;]+)['"]?\s*\)?([^;]*);`)
+	xmlProcInstRE   = regexp.MustCompile(`(?i)<\?xml\b[^?]*\?>`)
+	svgRootTagRE    = regexp.MustCompile(`(?i)<svg\b[^>]*>`)
+
+	// CSS minification regexes used by minifyCSS.
+	cssPreservedCommentRE = regexp.MustCompile(`/\*![\s\S]*?\*/`)
+	cssBlockCommentRE     = regexp.MustCompile(`/\*[\s\S]*?\*/`)
+	cssWhitespaceRE       = regexp.MustCompile(`\s+`)
+	cssAroundStructRE     = regexp.MustCompile(`\s*([{};:,])\s*`)
 )
 
 func Run(args []string, logger *slog.Logger) error {
@@ -86,6 +104,7 @@ func Run(args []string, logger *slog.Logger) error {
 	// doesn't need contract entries; posts data is compiler-managed).
 	var loadedPosts []posts.Post
 	var postTemplate *sitegen.PageTemplate
+	var blogTemplate *sitegen.PageTemplate
 	if opts.postsDir != "" {
 		loadedPosts, err = posts.LoadPostsDir(opts.postsDir)
 		if err != nil {
@@ -94,15 +113,38 @@ func Run(args []string, logger *slog.Logger) error {
 		if err := posts.CopyPostImages(loadedPosts, opts.outDir); err != nil {
 			return fmt.Errorf("copying post images: %w", err)
 		}
-		injectPostsBlogList(siteDataResult.Data, loadedPosts)
+		injectPostsBlogList(siteDataResult.Data, loadedPosts, opts.itemsPerPage)
 	}
 
-	// Save a reference to the post template before filterInternalPages removes it.
+	// Load projects and courses (after contract validation; data is compiler-managed).
+	var loadedProjects []projects.Project
+	if opts.projectsFile != "" {
+		loadedProjects, err = projects.LoadProjectsFile(opts.projectsFile)
+		if err != nil {
+			return fmt.Errorf("loading projects: %w", err)
+		}
+		injectProjectsHomeCarousel(siteDataResult.Data, loadedProjects, opts.itemsPerPage)
+	}
+
+	var loadedCourses []courses.Course
+	if opts.coursesFile != "" {
+		loadedCourses, err = courses.LoadCoursesFile(opts.coursesFile)
+		if err != nil {
+			return fmt.Errorf("loading courses: %w", err)
+		}
+		injectCoursesHomeCarousel(siteDataResult.Data, loadedCourses, opts.itemsPerPage)
+	}
+
+	// Save references to templates needed for paginated page generation,
+	// before filterInternalPages removes them.
 	for i := range pages {
-		if pages[i].Name == "post" {
+		switch pages[i].Name {
+		case "post":
 			tmp := pages[i]
 			postTemplate = &tmp
-			break
+		case "blog":
+			tmp := pages[i]
+			blogTemplate = &tmp
 		}
 	}
 
@@ -124,6 +166,7 @@ func Run(args []string, logger *slog.Logger) error {
 	}
 
 	// Render individual blog post pages and the RSS feed.
+	var extraSitemapURLs []sitemap.URLItem
 	if postTemplate != nil && len(loadedPosts) > 0 {
 		if err := writePostPages(logger, opts, *postTemplate, loadedPosts, siteDataResult.Data, assetsDir, mirrorer); err != nil {
 			return fmt.Errorf("writing post pages: %w", err)
@@ -133,7 +176,36 @@ func Run(args []string, logger *slog.Logger) error {
 		}
 	}
 
-	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages); err != nil {
+	// Generate paginated listing pages for blog, projects, and courses.
+	if blogTemplate != nil && len(loadedPosts) > 0 {
+		urls, err := writeBlogPaginatedPages(logger, opts, *blogTemplate, loadedPosts, siteDataResult.Data, assetsDir, mirrorer)
+		if err != nil {
+			return fmt.Errorf("writing blog listing pages: %w", err)
+		}
+		extraSitemapURLs = append(extraSitemapURLs, urls...)
+	}
+	if len(loadedProjects) > 0 {
+		projectTpl := findTemplate(pages, "projects")
+		if projectTpl != nil {
+			urls, err := writeProjectPages(logger, opts, *projectTpl, loadedProjects, siteDataResult.Data, assetsDir, mirrorer)
+			if err != nil {
+				return fmt.Errorf("writing projects pages: %w", err)
+			}
+			extraSitemapURLs = append(extraSitemapURLs, urls...)
+		}
+	}
+	if len(loadedCourses) > 0 {
+		coursesTpl := findTemplate(pages, "courses")
+		if coursesTpl != nil {
+			urls, err := writeCoursePages(logger, opts, *coursesTpl, loadedCourses, siteDataResult.Data, assetsDir, mirrorer)
+			if err != nil {
+				return fmt.Errorf("writing courses pages: %w", err)
+			}
+			extraSitemapURLs = append(extraSitemapURLs, urls...)
+		}
+	}
+
+	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages, extraSitemapURLs); err != nil {
 		return err
 	}
 
@@ -150,9 +222,16 @@ type buildOptions struct {
 	siteDataSource       string
 	outDir               string
 	postsDir             string
+	projectsFile         string
+	coursesFile          string
+	itemsPerPage         int
 	copyAssets           bool
 	inlineAssets         bool
-	mirrorExternalAssets bool
+	jsInlineThreshold    int
+	embedFonts              bool
+	inlineBodyCSS           bool
+	rasterInlineThreshold   int
+	mirrorExternalAssets    bool
 	mirroredAssetsDir    string
 	enableSanity         bool
 	strictContract       bool
@@ -177,12 +256,19 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.outDir, "out", "dist", "output directory for generated static site")
 	fs.BoolVar(&opts.copyAssets, "copy-assets", true, "copy static assets from assets dir into output")
 	fs.BoolVar(&opts.inlineAssets, "inline-assets", false, "inline local css/js/images into each html for self-contained pages")
+	fs.IntVar(&opts.jsInlineThreshold, "js-inline-threshold", defaultJSInlineThreshold, "inline local <script src> files smaller than this many bytes as <script> blocks; 0 to disable")
+	fs.BoolVar(&opts.embedFonts, "embed-fonts", false, "embed font files (woff2/woff/ttf/otf/eot) as base64 data URIs in inlined CSS; eliminates font files from dist but increases HTML size")
+	fs.BoolVar(&opts.inlineBodyCSS, "inline-body-css", false, "inline body <link rel=stylesheet> as <style> blocks instead of deferred external links; eliminates CSS files from dist but prevents cross-page CSS cache reuse")
+	fs.IntVar(&opts.rasterInlineThreshold, "raster-inline-threshold", 0, "inline local raster <img> files smaller than this many bytes as base64 data URIs; 0 to disable; skips LQIP-processed images and SVGs")
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
 	fs.BoolVar(&opts.strictContract, "strict-contract", true, "fail if any allowed contract path is not referenced by any template (disable for local dev with in-progress templates)")
 	fs.BoolVar(&opts.cleanURLs, "clean-urls", false, "output each page as <name>/index.html instead of <name>.html for extension-free URLs; updates sitemap accordingly")
 	fs.StringVar(&opts.postsDir, "posts-dir", "", "path to blog posts directory (posts/<slug>/index.md layout); enables Markdown blog post generation and RSS feed when set")
+	fs.StringVar(&opts.projectsFile, "projects-file", "", "path to projects.yaml (ffreis-projects repo); enables /projects/ paginated page generation when set")
+	fs.StringVar(&opts.coursesFile, "courses-file", "", "path to courses.yaml (ffreis-courses repo); enables /courses/ paginated page generation when set")
+	fs.IntVar(&opts.itemsPerPage, "items-per-page", 12, "number of items per paginated page for projects, courses, and blog")
 
 	if err := fs.Parse(args); err != nil {
 		return buildOptions{}, err
@@ -264,14 +350,10 @@ func maybeInitMirrorer(opts buildOptions) (*externalAssetMirrorer, error) {
 	if !opts.mirrorExternalAssets {
 		return nil, nil
 	}
-
-	mirrorer := newExternalAssetMirrorer(opts.outDir, opts.mirroredAssetsDir)
-	if opts.copyAssets && !opts.inlineAssets {
-		if err := mirrorExternalAssetsInCopiedCSS(filepath.Join(opts.outDir, "css"), mirrorer); err != nil {
-			return nil, fmt.Errorf("mirroring external assets in copied css: %w", err)
-		}
-	}
-	return mirrorer, nil
+	// External url() refs inside inline <style> blocks are handled by mirrorer.rewriteHTML,
+	// which runs per-page in transformPage. No pre-pass over copied CSS files is needed
+	// because css/ originals are no longer copied to the output directory.
+	return newExternalAssetMirrorer(opts.outDir, opts.mirroredAssetsDir), nil
 }
 
 func loadAndValidateSiteInputs(logger *slog.Logger, opts buildOptions, templatesDir string) ([]sitegen.PageTemplate, sitegen.SiteDataLoadResult, sitegen.SiteDataContractLoadResult, error) {
@@ -473,13 +555,9 @@ func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *e
 		}
 		html = updated
 	} else {
-		// Position-based CSS loading:
-		//   head  CSS → inlined as <style> (critical, zero-latency, render-correct)
-		//   body  CSS → kept external with media="print" onload trick (deferred, non-blocking)
-		// Mirrors the JS-at-end convention: document position signals loading priority.
-		updated, err := transformStylesheets(html, assetsDir)
+		updated, err := applyPositionBasedTransforms(html, opts, assetsDir)
 		if err != nil {
-			return "", nil, fmt.Errorf("transforming stylesheets: %w", err)
+			return "", nil, err
 		}
 		html = updated
 	}
@@ -490,6 +568,16 @@ func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *e
 		return "", nil, fmt.Errorf("processing LQIP images: %w", err)
 	}
 	html = lqipHTML
+
+	// Inline small raster images as base64 data URIs. Runs after LQIP so that
+	// LQIP-processed images (whose src is already a data URI) are correctly skipped.
+	if opts.rasterInlineThreshold > 0 {
+		inlinedHTML, err := inlineSmallLocalRasterImages(html, assetsDir, opts.rasterInlineThreshold)
+		if err != nil {
+			return "", nil, fmt.Errorf("inlining small raster images: %w", err)
+		}
+		html = inlinedHTML
+	}
 
 	// Fingerprint all remaining external local asset references so CloudFront
 	// can serve them with immutable (1-year) cache headers.
@@ -510,14 +598,46 @@ func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *e
 	return html, toCopy, nil
 }
 
-func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir string, pages []sitegen.PageTemplate) error {
+// applyPositionBasedTransforms is the default asset transform path (used when
+// -inline-assets is not set). It applies:
+//   - Position-based CSS loading: head CSS inlined as <style>, body CSS deferred.
+//   - SVG icon inlining for icons below svgInlineSizeLimit.
+//   - JS inlining for scripts below opts.jsInlineThreshold (when > 0).
+func applyPositionBasedTransforms(html string, opts buildOptions, assetsDir string) (string, error) {
+	// Position-based CSS: head CSS → <style> (critical), body CSS → deferred external
+	// (or inlined when -inline-body-css is set).
+	updated, err := transformStylesheets(html, assetsDir, opts.embedFonts, opts.inlineBodyCSS)
+	if err != nil {
+		return "", fmt.Errorf("transforming stylesheets: %w", err)
+	}
+	html = updated
+
+	// Inline small SVGs as <svg> elements to eliminate per-icon HTTP requests.
+	updated, err = inlineLocalSVGs(html, assetsDir)
+	if err != nil {
+		return "", fmt.Errorf("inlining SVGs: %w", err)
+	}
+	html = updated
+
+	// Inline scripts below the size threshold to eliminate per-script HTTP requests.
+	if opts.jsInlineThreshold > 0 {
+		updated, err = inlineSmallLocalScripts(html, assetsDir, opts.jsInlineThreshold)
+		if err != nil {
+			return "", fmt.Errorf("inlining small scripts: %w", err)
+		}
+		html = updated
+	}
+	return html, nil
+}
+
+func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir string, pages []sitegen.PageTemplate, extraURLs []sitemap.URLItem) error {
 	sitemapConfigPath, err := resolveSitemapConfigPath(opts.websiteRoot, opts.sitemapConfig)
 	if err != nil {
 		return err
 	}
 
 	if sitemapConfigPath != "" {
-		if err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir); err != nil {
+		if err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir, extraURLs); err != nil {
 			return err
 		}
 		logger.Info("generated sitemap from config", "config_path", sitemapConfigPath, "target", filepath.Join(opts.outDir, sitemapXML))
@@ -529,11 +649,22 @@ func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir s
 	if baseURL == "" {
 		return nil
 	}
-	if err := generateSitemapFromPages(baseURL, templatesDir, pages, opts.outDir, opts.cleanURLs); err != nil {
+	if err := generateSitemapFromPages(baseURL, templatesDir, pages, opts.outDir, opts.cleanURLs, extraURLs); err != nil {
 		return err
 	}
 	logger.Info("generated sitemap from pages", "base_url", baseURL, "target", filepath.Join(opts.outDir, sitemapXML))
 	fmt.Fprintln(os.Stdout, filepath.Join(opts.outDir, sitemapXML))
+	return nil
+}
+
+// findTemplate returns a pointer to the first PageTemplate with the given name,
+// or nil if not found.
+func findTemplate(pages []sitegen.PageTemplate, name string) *sitegen.PageTemplate {
+	for i := range pages {
+		if pages[i].Name == name {
+			return &pages[i]
+		}
+	}
 	return nil
 }
 
@@ -778,11 +909,12 @@ func resolveSitemapConfigPath(websiteRoot, flagPath string) (string, error) {
 	return "", nil
 }
 
-func generateSitemapFromConfig(configPath, websiteRoot, outDir string) error {
+func generateSitemapFromConfig(configPath, websiteRoot, outDir string, extraURLs []sitemap.URLItem) error {
 	cfg, err := sitemap.LoadConfig(configPath)
 	if err != nil {
 		return err
 	}
+	cfg.URLs = append(cfg.URLs, extraURLs...)
 
 	xmlBytes, err := sitemap.GenerateXML(cfg, websiteRoot)
 	if err != nil {
@@ -796,13 +928,13 @@ func generateSitemapFromConfig(configPath, websiteRoot, outDir string) error {
 	return nil
 }
 
-func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.PageTemplate, outDir string, cleanURLs bool) error {
+func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.PageTemplate, outDir string, cleanURLs bool, extraURLs []sitemap.URLItem) error {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
 		return fmt.Errorf("sitemap base URL cannot be empty")
 	}
 
-	urls := make([]sitemap.URLItem, 0, len(pages))
+	urls := make([]sitemap.URLItem, 0, len(pages)+len(extraURLs))
 	for _, page := range pages {
 		var path string
 		if page.Name == "index" {
@@ -820,6 +952,7 @@ func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.Page
 		}
 		urls = append(urls, item)
 	}
+	urls = append(urls, extraURLs...)
 
 	cfg := sitemap.Config{
 		BaseURL: strings.TrimRight(baseURL, "/"),
@@ -858,10 +991,61 @@ func inlineLocalAssets(doc, srcRoot string) (string, error) {
 }
 
 func wrapInStyleTag(css, media string) string {
+	css = minifyCSS(css)
 	if media != "" {
 		return "<style media=\"" + htmlEscape(media) + "\">\n" + css + "\n</style>"
 	}
 	return "<style>\n" + css + "\n</style>"
+}
+
+// minifyCSS strips comments and collapses whitespace in CSS text. It uses a
+// placeholder strategy to protect url() content and /*! preserved comments
+// from being affected by whitespace transforms. External @import lines and
+// @charset declarations are left structurally intact.
+func minifyCSS(css string) string {
+	if css == "" {
+		return css
+	}
+
+	type placeholder struct{ token, original string }
+	var slots []placeholder
+	nextToken := func(original string) string {
+		tok := fmt.Sprintf("__CSSPH%d__", len(slots))
+		slots = append(slots, placeholder{tok, original})
+		return tok
+	}
+
+	// Protect /*! preserved comments */ (license headers etc.).
+	css = cssPreservedCommentRE.ReplaceAllStringFunc(css, func(m string) string {
+		return nextToken(m)
+	})
+
+	// Strip regular /* ... */ block comments.
+	css = cssBlockCommentRE.ReplaceAllString(css, "")
+
+	// Protect url(...) content — may contain spaces, quotes, data URIs.
+	css = cssURLRE.ReplaceAllStringFunc(css, func(m string) string {
+		return nextToken(m)
+	})
+
+	// Collapse runs of whitespace (including newlines) to a single space.
+	css = cssWhitespaceRE.ReplaceAllString(css, " ")
+
+	// Strip spaces around structural characters.
+	css = cssAroundStructRE.ReplaceAllStringFunc(css, func(m string) string {
+		return strings.TrimSpace(m)
+	})
+
+	// Remove trailing semicolons before closing braces.
+	css = strings.ReplaceAll(css, ";}", "}")
+
+	css = strings.TrimSpace(css)
+
+	// Restore placeholders.
+	for _, s := range slots {
+		css = strings.ReplaceAll(css, s.token, s.original)
+	}
+	return css
 }
 
 func inlineLocalStylesheets(doc, srcRoot string) (string, error) {
@@ -874,7 +1058,8 @@ func inlineLocalStylesheets(doc, srcRoot string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		inlinedCSS, err := inlineCSSURLs(string(cssBytes), srcRoot, cssPath)
+		// Flatten @imports and convert url() refs to data URIs.
+		inlinedCSS, err := flattenCSSImports(string(cssBytes), cssPath, srcRoot, nil, cssInlineOpts{preserveURLs: false})
 		if err != nil {
 			return "", err
 		}
@@ -882,36 +1067,27 @@ func inlineLocalStylesheets(doc, srcRoot string) (string, error) {
 	})
 }
 
-// inlineLocalStylesheetsPreserveURLs inlines CSS text but rewrites url() references
-// to root-relative absolute paths (/dir/file.ext) instead of converting them to data
-// URIs. This keeps font and image files external so they can be cached and fingerprinted
-// separately, avoiding the ~280 KB of base64 font data that inlineLocalStylesheets would
-// embed per page.
-func inlineLocalStylesheetsPreserveURLs(doc, srcRoot string) (string, error) {
+// inlineLocalStylesheetsPreserveURLs inlines CSS text and rewrites url()
+// references to root-relative absolute paths (/dir/file.ext). This keeps font
+// and image files external so they can be cached and fingerprinted separately,
+// avoiding the ~280 KB of base64 font data that full inlining would embed per
+// page. Local @import rules are flattened recursively. When embedFonts is true,
+// font file url() refs are embedded as base64 data URIs instead.
+func inlineLocalStylesheetsPreserveURLs(doc, srcRoot string, embedFonts bool) (string, error) {
+	inlineOpts := cssInlineOpts{preserveURLs: true, embedFonts: embedFonts}
 	return replaceTagWith(doc, stylesheetTagRE, func(tag string, refs []string) (string, error) {
 		href := refs[1]
 		if isExternalRef(href) {
 			return tag, nil
 		}
-
 		cssBytes, cssPath, err := readAsset(srcRoot, href)
 		if err != nil {
 			return "", err
 		}
-
-		rebasedCSS, err := rewriteCSSURLs(string(cssBytes), func(ref string) (string, bool, error) {
-			if isExternalRef(ref) || isDataURI(ref) {
-				return ref, false, nil
-			}
-			// Resolve the url() ref relative to the CSS file, then make it root-relative.
-			resolved := resolveCSSAssetRef(cssPath, ref)
-			abs := "/" + resolved
-			return abs, abs != ref, nil
-		})
+		rebasedCSS, err := flattenCSSImports(string(cssBytes), cssPath, srcRoot, nil, inlineOpts)
 		if err != nil {
 			return "", err
 		}
-
 		return wrapInStyleTag(rebasedCSS, getTagAttr(tag, "media")), nil
 	})
 }
@@ -923,17 +1099,22 @@ func inlineLocalStylesheetsPreserveURLs(doc, srcRoot string) (string, error) {
 // This mirrors the JS-at-end convention: document position signals loading priority.
 // Templates that want a stylesheet deferred simply place its <link> in the body.
 // If </head> is absent the entire document is treated as head (all CSS inlined).
-func transformStylesheets(doc, assetsDir string) (string, error) {
+func transformStylesheets(doc, assetsDir string, embedFonts, inlineBodyCSS bool) (string, error) {
 	headEndRE := regexp.MustCompile(`(?i)</head>`)
 	loc := headEndRE.FindStringIndex(doc)
 	if loc == nil {
-		return inlineLocalStylesheetsPreserveURLs(doc, assetsDir)
+		return inlineLocalStylesheetsPreserveURLs(doc, assetsDir, embedFonts)
 	}
-	head, err := inlineLocalStylesheetsPreserveURLs(doc[:loc[0]], assetsDir)
+	head, err := inlineLocalStylesheetsPreserveURLs(doc[:loc[0]], assetsDir, embedFonts)
 	if err != nil {
 		return "", err
 	}
-	tail, err := deferLocalStylesheets(doc[loc[0]:], assetsDir)
+	var tail string
+	if inlineBodyCSS {
+		tail, err = inlineLocalStylesheetsPreserveURLs(doc[loc[0]:], assetsDir, embedFonts)
+	} else {
+		tail, err = deferLocalStylesheets(doc[loc[0]:], assetsDir)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -1016,6 +1197,132 @@ func inlineLocalImages(doc, srcRoot string) (string, error) {
 		}
 		return strings.Replace(tag, src, dataURL, 1), nil
 	})
+}
+
+// inlineSmallLocalRasterImages replaces <img src="..."> tags that reference local
+// raster files smaller than threshold bytes with inline base64 data URIs. SVG
+// files and images whose src is already a data URI (e.g. LQIP placeholders) are
+// skipped. Runs after LQIP and before fingerprinting so the isDataURI guard
+// correctly excludes LQIP-processed images.
+func inlineSmallLocalRasterImages(doc, assetsDir string, threshold int) (string, error) {
+	return replaceTagWith(doc, imgTagRE, func(tag string, refs []string) (string, error) {
+		src := refs[1]
+		if isExternalRef(src) || isDataURI(src) {
+			return tag, nil
+		}
+		if strings.ToLower(path.Ext(strings.SplitN(src, "?", 2)[0])) == ".svg" {
+			return tag, nil // SVGs handled separately by inlineLocalSVGs
+		}
+		data, _, err := readAsset(assetsDir, src)
+		if err != nil || len(data) >= threshold {
+			return tag, nil // not found or too large: leave for fingerprinting
+		}
+		dataURL, err := assetToDataURL(assetsDir, src)
+		if err != nil {
+			return tag, nil
+		}
+		return strings.Replace(tag, src, dataURL, 1), nil
+	})
+}
+
+// inlineSmallLocalScripts replaces <script src="..."> tags that reference local
+// files smaller than threshold bytes with inline <script> blocks, eliminating
+// the HTTP request. Scripts at or above threshold stay external and are
+// fingerprinted. type="module" scripts are always kept external because inline
+// modules have different scoping semantics and cannot use import statements.
+func inlineSmallLocalScripts(doc, assetsDir string, threshold int) (string, error) {
+	return replaceTagWith(doc, scriptTagRE, func(tag string, refs []string) (string, error) {
+		src := refs[1]
+		if isExternalRef(src) {
+			return tag, nil
+		}
+		if strings.EqualFold(getTagAttr(tag, "type"), "module") {
+			return tag, nil
+		}
+		data, _, err := readAsset(assetsDir, src)
+		if err != nil || len(data) >= threshold {
+			return tag, nil // not found or too large: leave for fingerprinting
+		}
+		return "<script>\n" + string(data) + "\n</script>", nil
+	})
+}
+
+// inlineLocalSVGs replaces <img src="*.svg"> tags that reference small local
+// SVG files with the SVG XML content inline, eliminating the HTTP request for
+// the icon. SVGs >= svgInlineSizeLimit are left for normal fingerprinting.
+//
+// Runs in the default build pipeline after CSS transforms and before LQIP and
+// fingerprinting, so that inlined SVGs are not double-processed. Skipped in
+// -inline-assets mode where inlineLocalImages already handles SVGs as data URIs.
+func inlineLocalSVGs(doc, assetsDir string) (string, error) {
+	return replaceTagWith(doc, imgTagRE, func(tag string, refs []string) (string, error) {
+		src := refs[1]
+		if isExternalRef(src) {
+			return tag, nil
+		}
+		if strings.ToLower(path.Ext(strings.SplitN(src, "?", 2)[0])) != ".svg" {
+			return tag, nil
+		}
+		data, _, err := readAsset(assetsDir, src)
+		if err != nil || len(data) >= svgInlineSizeLimit {
+			return tag, nil // not found or too large: leave for fingerprinting
+		}
+		return svgFromImgTag(tag, data), nil
+	})
+}
+
+// svgFromImgTag prepares raw SVG bytes for inline HTML embedding:
+//   - strips the <?xml ...?> processing instruction (invalid in HTML5)
+//   - merges the img's class attribute into the <svg> root element's class
+//   - converts a non-empty alt to aria-label + role="img" on <svg>;
+//     an empty alt becomes aria-hidden="true" (decorative icon)
+//   - copies width/height from the img when the <svg> root lacks them
+func svgFromImgTag(imgTag string, svgData []byte) string {
+	svg := strings.TrimSpace(xmlProcInstRE.ReplaceAllString(string(svgData), ""))
+
+	loc := svgRootTagRE.FindStringIndex(svg)
+	if loc == nil {
+		return svg
+	}
+
+	root := svg[loc[0]:loc[1]]
+	extra := ""
+
+	imgClass := getTagAttr(imgTag, "class")
+	imgAlt := getTagAttr(imgTag, "alt")
+	imgWidth := getTagAttr(imgTag, "width")
+	imgHeight := getTagAttr(imgTag, "height")
+
+	if imgClass != "" {
+		if existing := getTagAttr(root, "class"); existing != "" {
+			root = strings.Replace(root, `class="`+existing+`"`, `class="`+imgClass+` `+existing+`"`, 1)
+		} else {
+			extra += ` class="` + imgClass + `"`
+		}
+	}
+	if imgAlt != "" {
+		// imgAlt is the raw attribute value extracted from HTML — already entity-encoded
+		// by the template engine. Only escape " to avoid breaking the aria-label delimiter.
+		extra += ` aria-label="` + strings.ReplaceAll(imgAlt, `"`, "&quot;") + `" role="img"`
+	} else if getTagAttr(root, "aria-hidden") == "" {
+		extra += ` aria-hidden="true"`
+	}
+	if imgWidth != "" && getTagAttr(root, "width") == "" {
+		extra += ` width="` + imgWidth + `"`
+	}
+	if imgHeight != "" && getTagAttr(root, "height") == "" {
+		extra += ` height="` + imgHeight + `"`
+	}
+
+	if extra != "" {
+		if strings.HasSuffix(root, "/>") {
+			root = root[:len(root)-2] + extra + "/>"
+		} else {
+			root = root[:len(root)-1] + extra + ">"
+		}
+	}
+
+	return svg[:loc[0]] + root + svg[loc[1]:]
 }
 
 func replaceTagWith(doc string, re *regexp.Regexp, replacer func(tag string, refs []string) (string, error)) (string, error) {
@@ -1137,6 +1444,115 @@ func resolveCSSAssetRef(cssPath, ref string) string {
 	}
 	base := filepath.Dir(cssPath)
 	return filepath.ToSlash(filepath.Clean(filepath.Join(base, ref)))
+}
+
+// flattenCSSImports recursively expands local @import statements in cssText
+// into the referenced file's content, applying url() rewriting as it goes.
+// External @import rules (CDN fonts, etc.) are left verbatim. Missing files are
+// skipped gracefully (the @import remains as-is). The seen map is shared across
+// recursive calls so each file is included at most once (CSS deduplication
+// semantics); pass nil for the initial call.
+func flattenCSSImports(cssText, cssPath, srcRoot string, seen map[string]bool, opts cssInlineOpts) (string, error) {
+	if seen == nil {
+		seen = make(map[string]bool)
+	}
+	if seen[cssPath] {
+		return "", nil // already included: deduplicate
+	}
+	seen[cssPath] = true
+
+	matches := cssImportRE.FindAllStringSubmatchIndex(cssText, -1)
+	if len(matches) == 0 {
+		return rewriteCSSURLsForPath(cssText, cssPath, srcRoot, opts)
+	}
+
+	var out strings.Builder
+	last := 0
+	for _, m := range matches {
+		prefix := cssText[last:m[0]]
+		rewritten, err := rewriteCSSURLsForPath(prefix, cssPath, srcRoot, opts)
+		if err != nil {
+			return "", err
+		}
+		out.WriteString(rewritten)
+
+		ref := strings.TrimSpace(cssText[m[2]:m[3]])
+		expanded, err := expandCSSImport(cssText[m[0]:m[1]], ref, cssPath, srcRoot, seen, opts)
+		if err != nil {
+			return "", err
+		}
+		out.WriteString(expanded)
+		last = m[1]
+	}
+
+	remaining := cssText[last:]
+	rewritten, err := rewriteCSSURLsForPath(remaining, cssPath, srcRoot, opts)
+	if err != nil {
+		return "", err
+	}
+	out.WriteString(rewritten)
+	return out.String(), nil
+}
+
+// expandCSSImport returns the replacement text for a single @import rule.
+// For external imports it returns the original rule unchanged. For local imports
+// it returns the recursively flattened file content, or the original rule if the
+// file cannot be read.
+func expandCSSImport(originalRule, ref, cssPath, srcRoot string, seen map[string]bool, opts cssInlineOpts) (string, error) {
+	if isExternalRef(ref) || isDataURI(ref) {
+		// External @import (CDN fonts, etc.) — leave verbatim; browsers resolve it.
+		return originalRule, nil
+	}
+	importedPath := resolveCSSAssetRef(cssPath, ref)
+	importedBytes, importedCleanPath, err := readAsset(srcRoot, importedPath)
+	if err != nil {
+		return originalRule, nil // not found: leave @import as-is rather than failing
+	}
+	return flattenCSSImports(string(importedBytes), importedCleanPath, srcRoot, seen, opts)
+}
+
+// cssInlineOpts controls how url() references are rewritten when CSS is inlined.
+type cssInlineOpts struct {
+	// preserveURLs: when true, url() becomes a root-relative path (/dir/file.ext).
+	// When false, the file is read and embedded as a base64 data URI.
+	preserveURLs bool
+	// embedFonts: when true and preserveURLs is true, font file url() refs are
+	// embedded as base64 data URIs instead of root-relative paths, eliminating
+	// font files from the dist output.
+	embedFonts bool
+}
+
+// rewriteCSSURLsForPath applies url() rewriting to cssText using cssPath for
+// relative reference resolution. Behaviour is controlled by opts.
+func rewriteCSSURLsForPath(cssText, cssPath, srcRoot string, opts cssInlineOpts) (string, error) {
+	if opts.preserveURLs {
+		return rewriteCSSURLs(cssText, func(ref string) (string, bool, error) {
+			if isExternalRef(ref) || isDataURI(ref) {
+				return ref, false, nil
+			}
+			resolved := resolveCSSAssetRef(cssPath, ref)
+			if opts.embedFonts && isFontRef(resolved) {
+				dataURL, err := assetToDataURL(srcRoot, resolved)
+				if err != nil {
+					return "", false, err
+				}
+				return dataURL, true, nil
+			}
+			abs := "/" + resolved
+			return abs, abs != ref, nil
+		})
+	}
+	return inlineCSSURLs(cssText, srcRoot, cssPath)
+}
+
+// isFontRef reports whether the asset reference points to a font file.
+func isFontRef(ref string) bool {
+	ext := strings.ToLower(path.Ext(strings.SplitN(ref, "?", 2)[0]))
+	switch ext {
+	case ".woff2", ".woff", ".ttf", ".otf", ".eot":
+		return true
+	}
+	return false
 }
 
 func assetToDataURL(srcRoot, ref string) (string, error) {
@@ -1448,8 +1864,11 @@ func getTagAttr(tag, attr string) string {
 }
 
 func copyStaticAssets(srcRoot, dstRoot string) error {
-	dirs := []string{"css", "fonts", "images", "js", "ld"}
-	files := []string{"favicon.ico", "send.js", "contactScript.js", "robots.txt", sitemapXML}
+	// css, fonts, images, and js are written directly as fingerprinted copies by
+	// writeHashedAssets; copying the originals would produce unreferenced dead files.
+	// ld/ (JSON-LD structured data) is served verbatim and is not fingerprinted.
+	dirs := []string{"ld"}
+	files := []string{"favicon.ico", "robots.txt", sitemapXML}
 
 	if err := copyExistingDirs(srcRoot, dstRoot, dirs); err != nil {
 		return err
