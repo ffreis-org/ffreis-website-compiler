@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"ffreis-website-compiler/internal/cmdutil"
 )
@@ -27,6 +28,7 @@ type buildOptions struct {
 	embedFonts            bool
 	inlineBodyCSS         bool
 	rasterInlineThreshold int
+	siblingBasePaths      []string
 	mirrorExternalAssets  bool
 	mirroredAssetsDir     string
 	enableSanity          bool
@@ -56,6 +58,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.BoolVar(&opts.embedFonts, "embed-fonts", false, "embed font files (woff2/woff/ttf/otf/eot) as base64 data URIs in inlined CSS; eliminates font files from dist but increases HTML size")
 	fs.BoolVar(&opts.inlineBodyCSS, "inline-body-css", false, "inline body <link rel=stylesheet> as <style> blocks instead of deferred external links; eliminates CSS files from dist but prevents cross-page CSS cache reuse")
 	fs.IntVar(&opts.rasterInlineThreshold, "raster-inline-threshold", 0, "inline local raster <img> files smaller than this many bytes as base64 data URIs; 0 to disable; skips LQIP-processed images and SVGs")
+	var siblingBasePathsFlag string
+	fs.StringVar(&siblingBasePathsFlag, "sibling-base-paths", "", "comma-separated URL prefixes of sibling deployments sharing the same CloudFront distribution (e.g. 'en,jp'); links under these prefixes are skipped by the internal link checker")
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
@@ -75,6 +79,15 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	}
 	opts.assetsDir = assetsDirFlag
 	opts.templatesDir = templatesDirFlag
+
+	if siblingBasePathsFlag != "" {
+		for _, s := range strings.Split(siblingBasePathsFlag, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				opts.siblingBasePaths = append(opts.siblingBasePaths, s)
+			}
+		}
+	}
 
 	return opts, nil
 }

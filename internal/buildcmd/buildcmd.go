@@ -11,6 +11,7 @@ import (
 
 	"ffreis-website-compiler/internal/assetusage"
 	"ffreis-website-compiler/internal/courses"
+	"ffreis-website-compiler/internal/linkcheck"
 	"ffreis-website-compiler/internal/posts"
 	"ffreis-website-compiler/internal/projects"
 	"ffreis-website-compiler/internal/sitegen"
@@ -199,6 +200,20 @@ func Run(args []string, logger *slog.Logger) error {
 			extraSitemapURLs = append(extraSitemapURLs, urls...)
 		}
 	}
+
+	// Validate that every internal <a href> link in the compiled output points
+	// to a page that was actually generated. This catches broken navigation links
+	// (the main cause of "access denied" in production) before S3 promotion.
+	// siblingBasePaths lists other deployments sharing the same bucket (e.g. "/en",
+	// "/jp") so cross-deployment links in the language switcher are not false-positives.
+	basePath, _ := siteDataResult.Data["base_path"].(string)
+	// Merge explicitly declared siblings (from -sibling-base-paths flag) with
+	// any auto-detected ones from ui.nav.lang_links in the site data.
+	siblingBasePaths := append(opts.siblingBasePaths, resolveSiblingBasePaths(siteDataResult.Data)...)
+	if err := linkcheck.ValidateAndReport(opts.outDir, basePath, siblingBasePaths); err != nil {
+		return fmt.Errorf("link validation: %w", err)
+	}
+	logger.Info("internal link check passed", "out_dir", opts.outDir)
 
 	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages, extraSitemapURLs); err != nil {
 		return err

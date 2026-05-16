@@ -79,13 +79,13 @@ func writePostPages(logger *slog.Logger, opts buildOptions, postTpl sitegen.Page
 			"PageName": "post",
 			"SiteData": siteData,
 			"CurrentPost": map[string]any{
-				"title":        post.Meta.Title,
-				"date":         post.Meta.Date,
-				"summary":      post.Meta.Summary,
-				"thumbnail":    post.Meta.Thumbnail,
+				"title":         post.Meta.Title,
+				"date":          post.Meta.Date,
+				"summary":       post.Meta.Summary,
+				"thumbnail":     post.Meta.Thumbnail,
 				"canonical_url": post.Meta.CanonicalURL,
-				"tags":         post.Meta.Tags,
-				"body_html":    post.BodyHTML,
+				"tags":          post.Meta.Tags,
+				"body_html":     post.BodyHTML,
 			},
 		}
 

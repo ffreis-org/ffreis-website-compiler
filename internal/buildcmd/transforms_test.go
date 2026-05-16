@@ -158,8 +158,8 @@ func TestTransformStylesheets_ExternalStylesheetsUntouched(t *testing.T) {
 
 func TestTransformStylesheets_EmbedFontsTurnsURLsToDataURIs(t *testing.T) {
 	dir := makeStylesheetDir(t, map[string]string{
-		"css/main.css":      `@font-face{src:url("/fonts/f.woff2")}`,
-		"fonts/f.woff2":     "woff2bytes",
+		"css/main.css":  `@font-face{src:url("/fonts/f.woff2")}`,
+		"fonts/f.woff2": "woff2bytes",
 	})
 	html := `<html><head><link rel="stylesheet" href="/css/main.css"></head></html>`
 	got, err := transformStylesheets(html, dir, true, false) // embedFonts=true
@@ -411,8 +411,8 @@ func TestRun_LQIPDataSrcIsFingerprinted(t *testing.T) {
 	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "images"))
 	writePNG(t, filepath.Join(websiteRoot, "src", "assets"), "images/hero.png", 100, 50)
 	testutil.WriteFiles(t, map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS): mainCSSContent,
-		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML): "",
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
 		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<img src="/images/hero.png" loading="eager" alt="hero">{{end}}`,
 	})
 
@@ -528,10 +528,10 @@ func TestRun_SameAssetFingerprintedConsistentlyAcrossPages(t *testing.T) {
 
 	const logoTag = `<img src="/images/logo.png" alt="logo">`
 	testutil.WriteFiles(t, map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):             mainCSSContent,
-		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):             "",
-		filepath.Join(websiteRoot, "src", "templates", "pages", "index.gohtml"):     `{{define "page"}}` + logoTag + `{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML):   `{{define "page"}}` + logoTag + `{{end}}`,
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", "index.gohtml"):   `{{define "page"}}` + logoTag + `{{end}}`,
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}` + logoTag + `{{end}}`,
 	})
 
 	outDir := t.TempDir()

@@ -127,6 +127,40 @@ func isPageInternalPattern(pattern string) bool {
 	return segment != "" && !strings.Contains(segment, "*")
 }
 
+// resolveSiblingBasePaths returns the URL prefixes of sibling deployments by
+// inspecting ui.nav.lang_links in the site data. Non-active language links
+// point to sibling deployments that share the same CloudFront distribution;
+// their href values become the sibling base paths for the internal link checker.
+//
+// Example (PT deployment, active="pt-BR"):
+//   - href="/en/" active=false → sibling "/en"
+//   - href="/jp/" active=false → sibling "/jp"
+//   - href="/"   active=true  → current deployment, skip
+//
+// Returns nil for single-language sites that have no lang_links.
+func resolveSiblingBasePaths(siteData map[string]any) []string {
+	ui, _ := siteData["ui"].(map[string]any)
+	nav, _ := ui["nav"].(map[string]any)
+	langLinks, _ := nav["lang_links"].([]any)
+	if len(langLinks) == 0 {
+		return nil
+	}
+	var siblings []string
+	for _, item := range langLinks {
+		link, _ := item.(map[string]any)
+		if active, _ := link["active"].(bool); active {
+			continue // this is the current deployment
+		}
+		href, _ := link["href"].(string)
+		href = strings.TrimRight(href, "/")
+		if href == "" {
+			continue // PT root "/" trims to "" — basePath logic already handles cross-root links
+		}
+		siblings = append(siblings, href)
+	}
+	return siblings
+}
+
 // filterInternalPages removes pages marked internal: true in the site data
 // (pages.<name>.internal). Such pages are still rendered (for asset usage
 // validation) but excluded from HTML output and sitemap generation.

@@ -76,4 +76,3 @@ func ResolveTemplatesRoot(websiteRoot string) (string, error) {
 		websiteRoot,
 	)
 }
-

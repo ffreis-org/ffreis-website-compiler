@@ -32,11 +32,11 @@ type rssChannel struct {
 }
 
 type rssItem struct {
-	Title       string `xml:"title"`
-	Link        string `xml:"link"`
-	Description string `xml:"description"`
+	Title       string  `xml:"title"`
+	Link        string  `xml:"link"`
+	Description string  `xml:"description"`
 	GUID        rssGUID `xml:"guid"`
-	PubDate     string `xml:"pubDate"`
+	PubDate     string  `xml:"pubDate"`
 }
 
 type rssGUID struct {
