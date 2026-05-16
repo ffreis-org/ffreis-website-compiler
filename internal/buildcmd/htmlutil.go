@@ -17,7 +17,9 @@ var (
 // cachedAttrSearchRE returns (caching) a regex that matches `attr="value"` for replacement.
 func cachedAttrSearchRE(attr string) *regexp.Regexp {
 	if v, ok := attrSearchCache.Load(attr); ok {
-		return v.(*regexp.Regexp)
+		if re, ok2 := v.(*regexp.Regexp); ok2 {
+			return re
+		}
 	}
 	re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(attr) + `\s*=\s*["'][^"']*["']`)
 	attrSearchCache.Store(attr, re)
@@ -27,7 +29,9 @@ func cachedAttrSearchRE(attr string) *regexp.Regexp {
 // cachedAttrValueRE returns (caching) a regex that captures the value of `attr="..."`.
 func cachedAttrValueRE(attr string) *regexp.Regexp {
 	if v, ok := attrValueCache.Load(attr); ok {
-		return v.(*regexp.Regexp)
+		if re, ok2 := v.(*regexp.Regexp); ok2 {
+			return re
+		}
 	}
 	re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(attr) + `\s*=\s*["']([^"']+)["']`)
 	attrValueCache.Store(attr, re)

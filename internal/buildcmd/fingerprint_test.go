@@ -18,7 +18,7 @@ func TestAssetContentHash_Is8HexChars(t *testing.T) {
 		t.Fatalf("expected 8-char hash, got %d: %q", len(hash), hash)
 	}
 	for _, c := range hash {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Fatalf("expected lowercase hex, got %q", hash)
 		}
 	}
@@ -26,7 +26,9 @@ func TestAssetContentHash_Is8HexChars(t *testing.T) {
 
 func TestAssetContentHash_Deterministic(t *testing.T) {
 	data := []byte("some css content")
-	if assetContentHash(data) != assetContentHash(data) {
+	h1 := assetContentHash(data)
+	h2 := assetContentHash(data)
+	if h1 != h2 {
 		t.Fatal("expected same input to produce same hash")
 	}
 }

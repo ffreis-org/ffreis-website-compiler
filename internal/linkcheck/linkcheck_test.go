@@ -22,7 +22,7 @@ func writeHTML(t *testing.T, dir, relPath string, hrefs ...string) {
 		sb.WriteString(`<a href="` + h + `">link</a>`)
 	}
 	sb.WriteString("</body></html>")
-	if err := os.WriteFile(full, []byte(sb.String()), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(full, []byte(sb.String()), 0o644); err != nil {
 		t.Fatalf("write %s: %v", relPath, err)
 	}
 }
@@ -286,7 +286,7 @@ func writeHTMLWithBase(t *testing.T, dir, relPath, baseHref string, hrefs ...str
 		sb.WriteString(`<a href="` + h + `">link</a>`)
 	}
 	sb.WriteString("</body></html>")
-	if err := os.WriteFile(full, []byte(sb.String()), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(full, []byte(sb.String()), 0o644); err != nil {
 		t.Fatalf("write %s: %v", relPath, err)
 	}
 }

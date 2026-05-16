@@ -22,7 +22,7 @@ func assetContentHash(data []byte) string {
 }
 
 // insertHashInPath inserts a hash token before the last extension.
-// "portrait.webp" + "a1b2c3d4" → "portrait.a1b2c3d4.webp"
+// "portrait.webp" + "a1b2c3d4" → "portrait.a1b2c3d4.webp".
 func insertHashInPath(relPath, hash string) string {
 	ext := path.Ext(relPath)
 	return relPath[:len(relPath)-len(ext)] + "." + hash + ext

@@ -119,7 +119,7 @@ func ValidateAndReport(outDir, basePath string, siblingBasePaths []string) error
 // checkFileLinks reads an HTML file and returns BrokenLink entries for every
 // internal anchor href that does not resolve to an existing dist file.
 func checkFileLinks(path, outDir, basePath string, siblings []string, reachable map[string]bool) ([]BrokenLink, error) {
-	content, err := os.ReadFile(path) //nolint:gosec
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -361,11 +361,11 @@ func formatBrokenLinks(broken []BrokenLink) string {
 	sort.Strings(files)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%d broken internal link(s) in compiled output:\n", len(broken)))
+	fmt.Fprintf(&sb, "%d broken internal link(s) in compiled output:\n", len(broken))
 	for _, file := range files {
 		sb.WriteString("  " + file + ":\n")
 		for _, bl := range byFile[file] {
-			sb.WriteString(fmt.Sprintf("    href=%q → %q not found\n", bl.Href, bl.Target))
+			fmt.Fprintf(&sb, "    href=%q → %q not found\n", bl.Href, bl.Target)
 		}
 	}
 	return strings.TrimRight(sb.String(), "\n")

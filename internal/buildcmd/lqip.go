@@ -118,11 +118,12 @@ func scaleNearest(src image.Image, w, h int) *image.RGBA {
 		for x := range w {
 			sx := sb.Min.X + x*srcW/w
 			r, g, b, a := src.At(sx, sy).RGBA()
+			// r,g,b,a are 16-bit (0–0xffff); >>8 gives 0–0xff, safe to cast.
 			dst.SetRGBA(x, y, color.RGBA{
-				R: uint8(r >> 8),
-				G: uint8(g >> 8),
-				B: uint8(b >> 8),
-				A: uint8(a >> 8),
+				R: uint8(r >> 8), //nolint:gosec // G115: safe, see comment above
+				G: uint8(g >> 8), //nolint:gosec // G115: safe, see comment above
+				B: uint8(b >> 8), //nolint:gosec // G115: safe, see comment above
+				A: uint8(a >> 8), //nolint:gosec // G115: safe, see comment above
 			})
 		}
 	}

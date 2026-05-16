@@ -116,8 +116,8 @@ func injectPaginatedSection(siteData map[string]any, section string, pg paginati
 }
 
 // resolvePagedTarget returns the output file path for a paginated page.
-// Page 1 → <outDir>/<section>/index.html
-// Page N → <outDir>/<section>/page/<N>/index.html
+// Page 1 → <outDir>/<section>/index.html.
+// Page N → <outDir>/<section>/page/<N>/index.html.
 func resolvePagedTarget(outDir, section string, pageNum int) string {
 	if pageNum == 1 {
 		return filepath.Join(outDir, section, "index.html")
