@@ -157,7 +157,7 @@ func Run(args []string, logger *slog.Logger) error {
 
 	pages = filterInternalPages(pages, siteDataResult.Data)
 
-	if err := writePages(logger, opts, pages, assetsDir, renderedPages, mirrorer); err != nil {
+	if err := writePages(logger, opts, pages, assetsDir, siteDataResult.Data, renderedPages, mirrorer); err != nil {
 		return err
 	}
 
@@ -223,7 +223,7 @@ func Run(args []string, logger *slog.Logger) error {
 	return nil
 }
 
-func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, assetsDir string, renderedPages map[string]string, mirrorer *externalAssetMirrorer) error {
+func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, assetsDir string, siteData map[string]any, renderedPages map[string]string, mirrorer *externalAssetMirrorer) error {
 	allToCopy := make(map[string]string) // hashedRelPath → originalRelPath
 
 	for _, page := range pages {
@@ -235,6 +235,7 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 		if err != nil {
 			return fmt.Errorf("transforming %s: %w", target, err)
 		}
+		htmlOut = injectHreflangAlternates(htmlOut, siteData, page.Name, opts.cleanURLs)
 		for k, v := range pageCopy {
 			allToCopy[k] = v
 		}
