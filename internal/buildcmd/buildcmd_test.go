@@ -331,13 +331,13 @@ func TestRun_InlineBodyCSS(t *testing.T) {
 	websiteRoot := newTestWebsiteRoot(t)
 	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "css"))
 	testutil.WriteFiles(t, map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):            mainCSSContent,
-		filepath.Join(websiteRoot, "src", "assets", "css", "widget.css"):           ".widget { color: blue; }\n",
-		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):            "",
-		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML):  `{{define "page"}}<p>hello</p>{{end}}`,
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "assets", "css", "widget.css"):          ".widget { color: blue; }\n",
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>hello</p>{{end}}`,
 		// widget.css is in the body → normally deferred; with -inline-body-css it becomes <style>.
 		filepath.Join(websiteRoot, "src", "templates", "partials", "head.gohtml"): `{{define "head"}}<link rel="stylesheet" href="/css/main.css">{{end}}`,
-		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"):   `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>` +
+		filepath.Join(websiteRoot, "src", "templates", "layout", "base.gohtml"): `{{define "layout"}}<!doctype html><html><head>{{template "head" .}}</head><body>` +
 			`<link rel="stylesheet" href="/css/widget.css">{{template "page" .}}</body></html>{{end}}`,
 	})
 
@@ -369,10 +369,10 @@ func TestRun_EmbedFonts(t *testing.T) {
 	websiteRoot := newTestWebsiteRoot(t)
 	testutil.MustMkdirAll(t, filepath.Join(websiteRoot, "src", "assets", "fonts"))
 	testutil.WriteFiles(t, map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "fonts", "inter.woff2"):        "woff2data",
-		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):            `@font-face { src: url("/fonts/inter.woff2"); }`,
-		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):            "",
-		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML):  `{{define "page"}}<p>hello</p>{{end}}`,
+		filepath.Join(websiteRoot, "src", "assets", "fonts", "inter.woff2"):       "woff2data",
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           `@font-face { src: url("/fonts/inter.woff2"); }`,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
+		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>hello</p>{{end}}`,
 	})
 
 	outDir := t.TempDir()
@@ -402,8 +402,8 @@ func TestRun_EmbedFonts(t *testing.T) {
 func TestRun_OriginalCSSNotCopiedToDist(t *testing.T) {
 	websiteRoot := newTestWebsiteRoot(t)
 	testutil.WriteFiles(t, map[string]string{
-		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS): mainCSSContent,
-		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML): "",
+		filepath.Join(websiteRoot, "src", "assets", "css", fileMainCSS):           mainCSSContent,
+		filepath.Join(websiteRoot, "src", "data", fileSiteContractYAML):           "",
 		filepath.Join(websiteRoot, "src", "templates", "pages", fileAgendaGoHTML): `{{define "page"}}<p>hello</p>{{end}}`,
 	})
 

@@ -551,11 +551,6 @@ func parseSiteDataContract(raw []byte) (SiteDataContract, error) {
 	return contract, nil
 }
 
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
-}
-
 func dict(values ...any) (map[string]any, error) {
 	if len(values)%2 != 0 {
 		return nil, fmt.Errorf("dict expects an even number of arguments")

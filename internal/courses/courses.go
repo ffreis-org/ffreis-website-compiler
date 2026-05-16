@@ -10,15 +10,15 @@ import (
 
 // Course holds data for a single course catalog entry.
 type Course struct {
-	Title                string            `yaml:"title"`
-	Description          string            `yaml:"description"`
-	Platform             string            `yaml:"platform"`
-	AvailabilityType     string            `yaml:"availability_type"`
-	UdemyURL             string            `yaml:"udemy_url"`
-	SupportedLanguages   []string          `yaml:"supported_languages"`
-	LocalizedCTALabels   map[string]string `yaml:"localized_cta_labels"`
-	LocalizedPriceNotes  string            `yaml:"localized_price_notes"`
-	Order                int               `yaml:"order"`
+	Title               string            `yaml:"title"`
+	Description         string            `yaml:"description"`
+	Platform            string            `yaml:"platform"`
+	AvailabilityType    string            `yaml:"availability_type"`
+	UdemyURL            string            `yaml:"udemy_url"`
+	SupportedLanguages  []string          `yaml:"supported_languages"`
+	LocalizedCTALabels  map[string]string `yaml:"localized_cta_labels"`
+	LocalizedPriceNotes string            `yaml:"localized_price_notes"`
+	Order               int               `yaml:"order"`
 }
 
 // LoadCoursesFile reads a YAML list of courses from path and returns them
@@ -64,15 +64,15 @@ func ToSiteDataList(list []Course) []any {
 			ctaLabels[k] = v
 		}
 		out[i] = map[string]any{
-			"title":                c.Title,
-			"description":          c.Description,
-			"platform":             c.Platform,
-			"availability_type":    c.AvailabilityType,
-			"udemy_url":            c.UdemyURL,
-			"supported_languages":  langs,
-			"localized_cta_labels": ctaLabels,
+			"title":                 c.Title,
+			"description":           c.Description,
+			"platform":              c.Platform,
+			"availability_type":     c.AvailabilityType,
+			"udemy_url":             c.UdemyURL,
+			"supported_languages":   langs,
+			"localized_cta_labels":  ctaLabels,
 			"localized_price_notes": c.LocalizedPriceNotes,
-			"order":                c.Order,
+			"order":                 c.Order,
 		}
 	}
 	return out

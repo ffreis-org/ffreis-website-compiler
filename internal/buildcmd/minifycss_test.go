@@ -96,3 +96,64 @@ func TestMinifyCSS_MediaQueryPreservesStructure(t *testing.T) {
 		t.Fatalf("expected font-size rule preserved, got %q", got)
 	}
 }
+
+// ── CSS string literal protection ─────────────────────────────────────────────
+
+func TestMinifyCSS_PreservesColonInContentString(t *testing.T) {
+	// Colon inside a CSS string must not be stripped of surrounding spaces.
+	input := `.a { content: "Price: free"; }`
+	got := minifyCSS(input)
+	if !strings.Contains(got, `"Price: free"`) {
+		t.Fatalf("expected quoted string content unchanged, got %q", got)
+	}
+}
+
+func TestMinifyCSS_PreservesCommaInContentString(t *testing.T) {
+	input := `.a { content: "hello, world"; }`
+	got := minifyCSS(input)
+	if !strings.Contains(got, `"hello, world"`) {
+		t.Fatalf("expected comma+space inside string preserved, got %q", got)
+	}
+}
+
+func TestMinifyCSS_PreservesSemicolonInContentString(t *testing.T) {
+	input := `.a { content: "a; b"; }`
+	got := minifyCSS(input)
+	if !strings.Contains(got, `"a; b"`) {
+		t.Fatalf("expected semicolon inside string preserved, got %q", got)
+	}
+}
+
+func TestMinifyCSS_PreservesSingleQuotedString(t *testing.T) {
+	input := `.a { content: 'x: y, z'; }`
+	got := minifyCSS(input)
+	if !strings.Contains(got, `'x: y, z'`) {
+		t.Fatalf("expected single-quoted string preserved, got %q", got)
+	}
+}
+
+func TestMinifyCSS_PreservesEscapedQuoteInsideString(t *testing.T) {
+	input := `.a { content: "say \"hello\""; }`
+	got := minifyCSS(input)
+	if !strings.Contains(got, `"say \"hello\""`) {
+		t.Fatalf("expected escaped quote inside string preserved, got %q", got)
+	}
+}
+
+func TestMinifyCSS_StillMinifiesOutsideStrings(t *testing.T) {
+	// Structural chars outside strings must still be compacted.
+	input := `.a { color : red ; margin : 0 } .b { font-size : 12px }`
+	got := minifyCSS(input)
+	if strings.Contains(got, " : ") || strings.Contains(got, " ; ") {
+		t.Fatalf("expected structural whitespace removed outside strings, got %q", got)
+	}
+}
+
+func TestMinifyCSS_FontFamilyWithCommaPreserved(t *testing.T) {
+	// font-family string values must keep their spaces.
+	input := `body { font-family: "Times New Roman", serif; }`
+	got := minifyCSS(input)
+	if !strings.Contains(got, `"Times New Roman"`) {
+		t.Fatalf("expected font-family string preserved, got %q", got)
+	}
+}

@@ -99,9 +99,10 @@ func ToSiteDataMap(pg Page, perPage int) map[string]any {
 // Pattern: [1] [ellipsis if P>2] [P if P≠1 and P≠T] [ellipsis if P<T-1] [T(last)]
 //
 // Examples (P=5, T=7):  1 … 5 … 7(last)
-//          (P=2, T=7):  1 2 … 7(last)
-//          (P=6, T=7):  1 … 6 7(last)
-//          (P=1, T=1):  1(last)
+//
+//	(P=2, T=7):  1 2 … 7(last)
+//	(P=6, T=7):  1 … 6 7(last)
+//	(P=1, T=1):  1(last)
 func computeBar(currentPage, totalPages int, baseHref string) []BarItem {
 	if totalPages <= 1 {
 		return []BarItem{{

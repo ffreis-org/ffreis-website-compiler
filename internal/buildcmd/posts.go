@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"ffreis-website-compiler/internal/pagination"
 	"ffreis-website-compiler/internal/posts"
 	"ffreis-website-compiler/internal/rss"
 	"ffreis-website-compiler/internal/sitegen"
@@ -68,47 +67,7 @@ func writeBlogPaginatedPages(
 	for i, p := range postList {
 		allItems[i] = postToMap(p)
 	}
-
-	pages := pagination.Paginate(allItems, opts.itemsPerPage, "/blog")
-	allToCopy := make(map[string]string)
-	var sitemapURLs []sitemap.URLItem
-
-	for _, pg := range pages {
-		pageData := shallowCopySiteDataForSection(siteData, "blog")
-		injectPaginatedSection(pageData, "blog", pg, opts.itemsPerPage)
-
-		var rendered bytes.Buffer
-		if err := blogTpl.Tmpl.ExecuteTemplate(&rendered, "layout",
-			sitegen.NewTemplateData("blog", pageData)); err != nil {
-			return nil, fmt.Errorf("rendering blog page %d: %w", pg.Number, err)
-		}
-
-		htmlOut, toCopy, err := transformPage(rendered.String(), opts, assetsDir, mirrorer)
-		if err != nil {
-			return nil, fmt.Errorf("transforming blog page %d: %w", pg.Number, err)
-		}
-		for k, v := range toCopy {
-			allToCopy[k] = v
-		}
-
-		target := resolvePagedTarget(opts.outDir, "blog", pg.Number)
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return nil, fmt.Errorf("creating dir for blog page %d: %w", pg.Number, err)
-		}
-		if err := os.WriteFile(target, []byte(htmlOut), 0o644); err != nil { //nolint:gosec
-			return nil, fmt.Errorf(errFmtWriting, target, err)
-		}
-		logger.Info("generated blog page", "page", pg.Number, "target", target)
-
-		sitemapURLs = append(sitemapURLs, sitemap.URLItem{
-			Path: pagination.PageHref("/blog", pg.Number),
-		})
-	}
-
-	if err := writeHashedAssets(opts.outDir, assetsDir, allToCopy); err != nil {
-		return nil, err
-	}
-	return sitemapURLs, nil
+	return writePaginatedPages(logger, opts, blogTpl, allItems, "blog", siteData, assetsDir, mirrorer)
 }
 
 // writePostPages renders and writes one HTML file per post using the post template.
@@ -120,13 +79,13 @@ func writePostPages(logger *slog.Logger, opts buildOptions, postTpl sitegen.Page
 			"PageName": "post",
 			"SiteData": siteData,
 			"CurrentPost": map[string]any{
-				"title":        post.Meta.Title,
-				"date":         post.Meta.Date,
-				"summary":      post.Meta.Summary,
-				"thumbnail":    post.Meta.Thumbnail,
+				"title":         post.Meta.Title,
+				"date":          post.Meta.Date,
+				"summary":       post.Meta.Summary,
+				"thumbnail":     post.Meta.Thumbnail,
 				"canonical_url": post.Meta.CanonicalURL,
-				"tags":         post.Meta.Tags,
-				"body_html":    post.BodyHTML,
+				"tags":          post.Meta.Tags,
+				"body_html":     post.BodyHTML,
 			},
 		}
 

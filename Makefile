@@ -168,7 +168,7 @@ container-build: ## Build CLI container image
 docker-build: container-build ## Backward-compatible alias
 
 
-PLATFORM_STANDARDS_SHA := b6a9ef92199954e3da5b80814321cb92f649fb81
+PLATFORM_STANDARDS_SHA := 13304a2737e81ea41604b8ea9656c1b0448782bf
 PLATFORM_STANDARDS_RAW := https://raw.githubusercontent.com/FelipeFuhr/ffreis-platform-standards
 
 HOOK_SCRIPTS := \

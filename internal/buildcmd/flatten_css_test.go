@@ -47,7 +47,7 @@ func TestFlattenCSSImports_NestedImports(t *testing.T) {
 	testutil.WriteFiles(t, map[string]string{
 		filepath.Join(dir, "tokens", "colors.css"):  ":root { --red: #f00; }",
 		filepath.Join(dir, "tokens", "spacing.css"): ":root { --gap: 8px; }",
-		filepath.Join(dir, "tokens.css"):             `@import "tokens/colors.css"; @import "tokens/spacing.css";`,
+		filepath.Join(dir, "tokens.css"):            `@import "tokens/colors.css"; @import "tokens/spacing.css";`,
 	})
 	css := `@import "tokens.css";
 body { color: var(--red); gap: var(--gap); }`
@@ -130,8 +130,8 @@ func TestFlattenCSSImports_URLRewritingInImportedFile(t *testing.T) {
 	testutil.MustMkdirAll(t, filepath.Join(dir, "components"))
 	testutil.MustMkdirAll(t, filepath.Join(dir, "images"))
 	testutil.WriteFiles(t, map[string]string{
-		filepath.Join(dir, "images", "bg.png"):              "png",
-		filepath.Join(dir, "components", "button.css"):      `button { background: url("../images/bg.png"); }`,
+		filepath.Join(dir, "images", "bg.png"):         "png",
+		filepath.Join(dir, "components", "button.css"): `button { background: url("../images/bg.png"); }`,
 	})
 	css := `@import "components/button.css";`
 	got, err := flattenCSSImports(css, "main.css", dir, nil, cssInlineOpts{preserveURLs: true})
