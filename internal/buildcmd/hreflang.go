@@ -36,19 +36,15 @@ func injectHreflangAlternates(html string, siteData map[string]any, pageName str
 
 	var links strings.Builder
 	for _, v := range variants {
-		links.WriteString(fmt.Sprintf(
-			`<link rel="alternate" hreflang="%s" href="%s">`,
-			v.hreflang, buildAlternateURL(baseURL, v.path, pageName, cleanURLs),
-		))
+		fmt.Fprintf(&links, `<link rel="alternate" hreflang="%s" href="%s">`,
+			v.hreflang, buildAlternateURL(baseURL, v.path, pageName, cleanURLs))
 		links.WriteByte('\n')
 	}
 	if defaultHreflang != "" {
 		for _, v := range variants {
 			if v.hreflang == defaultHreflang {
-				links.WriteString(fmt.Sprintf(
-					`<link rel="alternate" hreflang="x-default" href="%s">`,
-					buildAlternateURL(baseURL, v.path, pageName, cleanURLs),
-				))
+				fmt.Fprintf(&links, `<link rel="alternate" hreflang="x-default" href="%s">`,
+					buildAlternateURL(baseURL, v.path, pageName, cleanURLs))
 				links.WriteByte('\n')
 				break
 			}
