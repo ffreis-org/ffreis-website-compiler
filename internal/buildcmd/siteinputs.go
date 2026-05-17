@@ -102,6 +102,7 @@ func siteDataWithoutPageInternalFlags(siteData map[string]any) map[string]any {
 func contractWithoutPageInternalPatterns(contract sitegen.SiteDataContract) sitegen.SiteDataContract {
 	contract.Required = contractPatternsWithoutPageInternal(contract.Required)
 	contract.Allowed = contractPatternsWithoutPageInternal(contract.Allowed)
+	contract.CompilerConsumed = contractPatternsWithoutPageInternal(contract.CompilerConsumed)
 	return contract
 }
 

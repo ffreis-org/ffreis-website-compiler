@@ -38,8 +38,13 @@ type SiteDataLoadResult struct {
 }
 
 type SiteDataContract struct {
-	Required []string `yaml:"required"`
-	Allowed  []string `yaml:"allowed"`
+	Required         []string `yaml:"required"`
+	Allowed          []string `yaml:"allowed"`
+	// CompilerConsumed lists paths that are read by the compiler's Go code rather
+	// than by templates. They must be present in data (not dangling) and templates
+	// may optionally access them, but the strict-contract check never requires
+	// templates to use them.
+	CompilerConsumed []string `yaml:"compiler_consumed"`
 }
 
 type SiteDataContractLoadResult struct {
@@ -271,8 +276,12 @@ func ValidateSiteData(siteData map[string]any, contract SiteDataContract) error 
 	if err != nil {
 		return err
 	}
+	compilerConsumedPatterns, err := normalizePatterns(contract.CompilerConsumed)
+	if err != nil {
+		return err
+	}
 
-	if len(requiredPatterns) == 0 && len(allowedPatterns) == 0 {
+	if len(requiredPatterns) == 0 && len(allowedPatterns) == 0 && len(compilerConsumedPatterns) == 0 {
 		return nil
 	}
 
@@ -285,9 +294,9 @@ func ValidateSiteData(siteData map[string]any, contract SiteDataContract) error 
 		}
 	}
 
-	if len(allowedPatterns) > 0 {
+	if len(allowedPatterns) > 0 || len(compilerConsumedPatterns) > 0 {
 		for _, path := range leafPaths {
-			if !anyPatternMatches(path, allowedPatterns) {
+			if !anyPatternMatches(path, allowedPatterns) && !anyPatternMatches(path, compilerConsumedPatterns) {
 				validationErrors = append(validationErrors, fmt.Sprintf("dangling site data path not declared in contract: %s", path))
 			}
 		}
@@ -308,13 +317,19 @@ func ValidateSiteDataContractUsage(contract SiteDataContract, usedPaths []string
 	if err != nil {
 		return err
 	}
+	compilerConsumedPatterns, err := normalizePatterns(contract.CompilerConsumed)
+	if err != nil {
+		return err
+	}
 
 	if len(requiredPatterns) == 0 && len(allowedPatterns) == 0 {
 		return nil
 	}
 
 	validationErrors := make([]string, 0)
-	validationErrors = append(validationErrors, undeclaredUsageErrors(usedPaths, allowedPatterns, requiredPatterns)...)
+	// compiler_consumed paths are allowed for template access but never required.
+	allKnownPatterns := append(allowedPatterns, compilerConsumedPatterns...)
+	validationErrors = append(validationErrors, undeclaredUsageErrors(usedPaths, allKnownPatterns, requiredPatterns)...)
 	validationErrors = append(validationErrors, unusedPatternErrors("required", requiredPatterns, usedPaths)...)
 	validationErrors = append(validationErrors, unusedPatternErrors("allowed", allowedPatterns, usedPaths)...)
 
