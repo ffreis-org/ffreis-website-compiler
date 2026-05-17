@@ -131,7 +131,7 @@ Benefits: eliminates one HTTP request per icon, enables CSS styling of SVG inter
 normal build pipeline only (skipped when `-inline-assets` is set, where
 `inlineLocalImages` already handles SVGs as data URIs).
 
-### 4. JS size-threshold inlining (`buildcmd.go` — `inlineSmallLocalScripts`)
+### 4. JS size-threshold inlining with cross-page sharing awareness (`buildcmd.go` — `inlineSmallLocalScripts`, `collectSharedScripts`)
 
 For every `<script src="...">` referencing a local file below the threshold:
 - Replaces the tag with an inline `<script>` block containing the file's content.
@@ -139,13 +139,43 @@ For every `<script src="...">` referencing a local file below the threshold:
   when inlined).
 - Files at or above the threshold stay external and are fingerprinted.
 
-**Flag:** `-js-inline-threshold` (default 8192 bytes; set 0 to disable). Mirrors the SVG
-8 KB convention. Large scripts (analytics, libraries) typically exceed the threshold and
-stay external.
+**Flags:**
+- **`-js-inline-threshold`** (default 8192 bytes; set 0 to disable) — applies to all scripts,
+  or only to single-page scripts when `-js-shared-inline-threshold` is also set.
+- **`-js-shared-inline-threshold`** (default -1 = disabled) — when set to a value ≥ 0,
+  scripts that appear on **more than one rendered page** use this (lower) threshold instead
+  of `-js-inline-threshold`. Set to 0 to never inline shared scripts (cache all of them).
+  Set to 8192 to inline small shared utilities but cache larger shared scripts like ask.js.
+
+**Cross-page analysis pre-pass (`collectSharedScripts`):** After all regular pages are
+rendered (before `writePages`), `collectSharedScripts` scans every rendered HTML string with
+`scriptTagRE` and counts how many pages reference each local script. Scripts with a count > 1
+are placed in `buildOptions.sharedScripts`. Post pages and paginated pages inherit the same
+base layout, so the regular-page analysis correctly identifies shared scripts for all outputs.
+
+**Why this matters:** A script on every page (e.g. an ask-widget JS) benefits from CloudFront
+caching — one request per browser session shared across all pages. A script on one page
+benefits from inlining — no extra HTTP request, no cross-page caching opportunity lost.
+The default (`-1`) preserves the original behaviour: threshold applies uniformly.
+
+**`defer` semantics when inlining:** Inlined scripts lose the `defer` attribute and run
+synchronously. Scripts inlined in `<head>` must handle early execution (via `DOMContentLoaded`
+or similar); scripts inlined in `<body>` are safe since the preceding DOM is already parsed.
 
 Runs after CSS transforms and SVG inlining, before LQIP and fingerprinting. Since
 `assetusage.Validate()` runs on pre-transform HTML, the original `<script src>` tags are
 still present at validation time — no change needed to asset validation.
+
+### 4a. Script preload injection (`transform.go` — `injectCachedScriptPreloads`)
+
+Runs immediately after the JS inlining step. For every local `<script src="...">` that
+survived inlining (will be served as a separate cached file), injects a
+`<link rel="preload" as="script" href="...">` before `</head>`. The fingerprinting step
+then rewrites both the preload hint and the script tag to the same content-hashed filename,
+so the browser's preload cache fires exactly when the deferred script is encountered —
+typically 100-300 ms earlier on cold page loads. External CDN scripts and already-present
+preloads are skipped. This runs unconditionally (no flag); it is always beneficial when
+external local scripts exist.
 
 ### 5. LQIP — blur-up placeholders for above-fold images (`lqip.go`)
 

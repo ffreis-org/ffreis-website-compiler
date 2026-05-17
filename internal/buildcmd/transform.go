@@ -98,14 +98,77 @@ func applyPositionBasedTransforms(html string, opts buildOptions, assetsDir stri
 	html = updated
 
 	// Inline scripts below the size threshold to eliminate per-script HTTP requests.
+	// Scripts referenced by more than one page use jsSharedInlineThreshold (when >= 0)
+	// as their effective limit so they can be cached externally instead of inlined.
 	if opts.jsInlineThreshold > 0 {
-		updated, err = inlineSmallLocalScripts(html, assetsDir, opts.jsInlineThreshold)
+		updated, err = inlineSmallLocalScripts(html, assetsDir,
+			opts.jsInlineThreshold, opts.jsSharedInlineThreshold, opts.sharedScripts)
 		if err != nil {
 			return "", fmt.Errorf("inlining small scripts: %w", err)
 		}
 		html = updated
 	}
+	// Inject <link rel="preload" as="script"> hints for any local scripts that were NOT
+	// inlined (i.e. they will be fingerprinted and served as separate cached files).
+	// Preloads let the browser start fetching these scripts at HTML parse time instead
+	// of waiting to encounter the <script> tag later in the body.
+	html = injectCachedScriptPreloads(html)
 	return html, nil
+}
+
+// injectCachedScriptPreloads injects a <link rel="preload" as="script" href="..."> hint
+// before </head> for every local <script src="..."> tag that survived the inline step
+// (i.e. will be served as a separate cached file). Preloads that are already present and
+// external script URLs are skipped. The injected hrefs are local paths so they will be
+// fingerprinted by the subsequent fingerprintLocalAssets step, resulting in the same
+// content-hash as the script tag itself — the browser's preload cache hit fires exactly
+// when the deferred script tag is encountered.
+func injectCachedScriptPreloads(html string) string {
+	// Collect all remaining local <script src> hrefs.
+	var preloads []string
+	seen := map[string]bool{}
+	scriptTagRE.ReplaceAllStringFunc(html, func(tag string) string {
+		m := scriptTagRE.FindStringSubmatch(tag)
+		if m == nil {
+			return tag
+		}
+		src := m[1]
+		if isExternalRef(src) || seen[src] {
+			return tag
+		}
+		seen[src] = true
+		preloads = append(preloads, src)
+		return tag
+	})
+	if len(preloads) == 0 {
+		return html
+	}
+
+	// Collect hrefs already declared as preloads in the document so we don't duplicate.
+	existingPreloads := map[string]bool{}
+	preloadTagRE.ReplaceAllStringFunc(html, func(tag string) string {
+		m := preloadTagRE.FindStringSubmatch(tag)
+		if m != nil {
+			existingPreloads[m[1]] = true
+		}
+		return tag
+	})
+
+	// Build the injection block.
+	var sb strings.Builder
+	for _, src := range preloads {
+		if existingPreloads[src] {
+			continue
+		}
+		sb.WriteString(`<link rel="preload" as="script" href="`)
+		sb.WriteString(src)
+		sb.WriteString("\">\n    ")
+	}
+	inject := strings.TrimRight(sb.String(), "\n    ")
+	if inject == "" {
+		return html
+	}
+	return headEndRE.ReplaceAllString(html, inject+"\n</head>")
 }
 
 // transformStylesheets applies position-based CSS loading: stylesheet links in <head>
