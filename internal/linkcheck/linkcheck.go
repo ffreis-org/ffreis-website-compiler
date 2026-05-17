@@ -339,12 +339,33 @@ func isSiblingLink(href string, siblings []string) bool {
 	return false
 }
 
-// cleanURLPath removes redundant consecutive slashes.
+// cleanURLPath removes redundant slashes and resolves . and .. segments so
+// that relative hrefs like ../sibling or ./page are correctly evaluated.
 func cleanURLPath(p string) string {
+	// Collapse consecutive slashes first.
 	for strings.Contains(p, "//") {
 		p = strings.ReplaceAll(p, "//", "/")
 	}
-	return p
+	// Resolve . and .. segments.
+	var out []string
+	for _, seg := range strings.Split(p, "/") {
+		switch seg {
+		case "", ".":
+			// skip empty and current-dir segments (leading "/" kept via empty first element)
+		case "..":
+			if len(out) > 0 {
+				out = out[:len(out)-1]
+			}
+		default:
+			out = append(out, seg)
+		}
+	}
+	result := "/" + strings.Join(out, "/")
+	// Preserve trailing slash if the original had one.
+	if strings.HasSuffix(p, "/") && !strings.HasSuffix(result, "/") {
+		result += "/"
+	}
+	return result
 }
 
 // formatBrokenLinks returns a human-readable summary of broken links grouped by

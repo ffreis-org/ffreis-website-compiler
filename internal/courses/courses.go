@@ -13,6 +13,7 @@ type Course struct {
 	Title               string            `yaml:"title"`
 	Description         string            `yaml:"description"`
 	Platform            string            `yaml:"platform"`
+	Level               string            `yaml:"level"`
 	AvailabilityType    string            `yaml:"availability_type"`
 	UdemyURL            string            `yaml:"udemy_url"`
 	SupportedLanguages  []string          `yaml:"supported_languages"`
@@ -67,6 +68,7 @@ func ToSiteDataList(list []Course) []any {
 			"title":                 c.Title,
 			"description":           c.Description,
 			"platform":              c.Platform,
+			"level":                 c.Level,
 			"availability_type":     c.AvailabilityType,
 			"udemy_url":             c.UdemyURL,
 			"supported_languages":   langs,

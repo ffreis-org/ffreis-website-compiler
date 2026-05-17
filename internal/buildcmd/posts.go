@@ -15,12 +15,17 @@ import (
 
 // postToMap converts a Post to the map[string]any shape expected by templates.
 func postToMap(p posts.Post) map[string]any {
+	tagsAny := make([]any, len(p.Meta.Tags))
+	for i, t := range p.Meta.Tags {
+		tagsAny[i] = t
+	}
 	return map[string]any{
 		"title":     p.Meta.Title,
 		"date":      p.Meta.Date,
 		"summary":   p.Meta.Summary,
 		"href":      "/blog/" + p.Meta.Slug + "/",
 		"thumbnail": p.Meta.Thumbnail,
+		"tags":      tagsAny,
 	}
 }
 
