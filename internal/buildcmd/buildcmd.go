@@ -155,6 +155,14 @@ func Run(args []string, logger *slog.Logger) error {
 		return fmt.Errorf("validating local css/js asset usage: %w", err)
 	}
 
+	// Cross-page sharing analysis: identify which JS files appear on more than one page.
+	// These are candidates for caching rather than per-page inlining when
+	// -js-shared-inline-threshold is set. Runs after rendering so the full set of
+	// script references (including those injected by partials and the base layout) is visible.
+	if opts.jsSharedInlineThreshold >= 0 {
+		opts.sharedScripts = collectSharedScripts(renderedPages)
+	}
+
 	pages = filterInternalPages(pages, siteDataResult.Data)
 
 	if err := writePages(logger, opts, pages, assetsDir, siteDataResult.Data, renderedPages, mirrorer); err != nil {
@@ -393,4 +401,28 @@ func generateSitemapFromPages(baseURL, templatesDir string, pages []sitegen.Page
 	}
 
 	return nil
+}
+
+// collectSharedScripts scans every rendered page for local <script src="..."> references
+// and returns the set of asset paths (without leading "/") that appear on more than one page.
+// These scripts benefit from being cached externally rather than inlined into every HTML file.
+func collectSharedScripts(renderedPages map[string]string) map[string]bool {
+	usageCount := make(map[string]int, 16)
+	for _, html := range renderedPages {
+		matches := scriptTagRE.FindAllStringSubmatch(html, -1)
+		for _, m := range matches {
+			src := m[1]
+			if isExternalRef(src) {
+				continue
+			}
+			usageCount[strings.TrimPrefix(src, "/")]++
+		}
+	}
+	shared := make(map[string]bool, len(usageCount))
+	for path, n := range usageCount {
+		if n > 1 {
+			shared[path] = true
+		}
+	}
+	return shared
 }

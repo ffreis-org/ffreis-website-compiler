@@ -11,29 +11,31 @@ import (
 )
 
 type buildOptions struct {
-	websiteRoot           string
-	assetsDir             string
-	templatesDir          string
-	sitemapConfig         string
-	sitemapBaseURL        string
-	siteDataSource        string
-	outDir                string
-	postsDir              string
-	projectsFile          string
-	coursesFile           string
-	itemsPerPage          int
-	copyAssets            bool
-	inlineAssets          bool
-	jsInlineThreshold     int
-	embedFonts            bool
-	inlineBodyCSS         bool
-	rasterInlineThreshold int
-	siblingBasePaths      []string
-	mirrorExternalAssets  bool
-	mirroredAssetsDir     string
-	enableSanity          bool
-	strictContract        bool
-	cleanURLs             bool
+	websiteRoot             string
+	assetsDir               string
+	templatesDir            string
+	sitemapConfig           string
+	sitemapBaseURL          string
+	siteDataSource          string
+	outDir                  string
+	postsDir                string
+	projectsFile            string
+	coursesFile             string
+	itemsPerPage            int
+	copyAssets              bool
+	inlineAssets            bool
+	jsInlineThreshold       int
+	jsSharedInlineThreshold int             // -1 = disabled; use jsInlineThreshold for all scripts
+	sharedScripts           map[string]bool // populated at runtime by collectSharedScripts
+	embedFonts              bool
+	inlineBodyCSS           bool
+	rasterInlineThreshold   int
+	siblingBasePaths        []string
+	mirrorExternalAssets    bool
+	mirroredAssetsDir       string
+	enableSanity            bool
+	strictContract          bool
+	cleanURLs               bool
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {
@@ -55,6 +57,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.BoolVar(&opts.copyAssets, "copy-assets", true, "copy static assets from assets dir into output")
 	fs.BoolVar(&opts.inlineAssets, "inline-assets", false, "inline local css/js/images into each html for self-contained pages")
 	fs.IntVar(&opts.jsInlineThreshold, "js-inline-threshold", defaultJSInlineThreshold, "inline local <script src> files smaller than this many bytes as <script> blocks; 0 to disable")
+	fs.IntVar(&opts.jsSharedInlineThreshold, "js-shared-inline-threshold", -1, "for JS files referenced by more than one page, only inline if smaller than this many bytes; -1 to disable (all JS uses -js-inline-threshold regardless of page count)")
 	fs.BoolVar(&opts.embedFonts, "embed-fonts", false, "embed font files (woff2/woff/ttf/otf/eot) as base64 data URIs in inlined CSS; eliminates font files from dist but increases HTML size")
 	fs.BoolVar(&opts.inlineBodyCSS, "inline-body-css", false, "inline body <link rel=stylesheet> as <style> blocks instead of deferred external links; eliminates CSS files from dist but prevents cross-page CSS cache reuse")
 	fs.IntVar(&opts.rasterInlineThreshold, "raster-inline-threshold", 0, "inline local raster <img> files smaller than this many bytes as base64 data URIs; 0 to disable; skips LQIP-processed images and SVGs")

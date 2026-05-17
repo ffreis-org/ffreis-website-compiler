@@ -212,7 +212,13 @@ func inlineSmallLocalRasterImages(doc, assetsDir string, threshold int) (string,
 // the HTTP request. Scripts at or above threshold stay external and are
 // fingerprinted. type="module" scripts are always kept external because inline
 // modules have different scoping semantics and cannot use import statements.
-func inlineSmallLocalScripts(doc, assetsDir string, threshold int) (string, error) {
+//
+// When sharedThreshold >= 0 and a script path appears in sharedScripts (i.e. it
+// is referenced by more than one page), sharedThreshold is used as the effective
+// limit instead of threshold. This lets multi-page scripts be cached externally
+// while single-page scripts are still inlined up to the normal threshold.
+// Pass sharedThreshold = -1 to disable this distinction.
+func inlineSmallLocalScripts(doc, assetsDir string, threshold, sharedThreshold int, sharedScripts map[string]bool) (string, error) {
 	return replaceTagWith(doc, scriptTagRE, func(tag string, refs []string) (string, error) {
 		src := refs[1]
 		if isExternalRef(src) {
@@ -221,8 +227,12 @@ func inlineSmallLocalScripts(doc, assetsDir string, threshold int) (string, erro
 		if strings.EqualFold(getTagAttr(tag, "type"), "module") {
 			return tag, nil
 		}
+		effectiveThreshold := threshold
+		if sharedThreshold >= 0 && sharedScripts[strings.TrimPrefix(src, "/")] {
+			effectiveThreshold = sharedThreshold
+		}
 		data, _, err := readAsset(assetsDir, src)
-		if err != nil || len(data) >= threshold {
+		if err != nil || len(data) >= effectiveThreshold {
 			return tag, nil // not found or too large: leave for fingerprinting
 		}
 		return "<script>\n" + string(data) + "\n</script>", nil
