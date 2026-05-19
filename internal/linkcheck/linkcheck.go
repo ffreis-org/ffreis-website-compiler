@@ -242,6 +242,7 @@ func addReachablePaths(paths map[string]bool, rel string) {
 		bare := strings.TrimSuffix(rel, ".html")
 		paths["/"+bare] = true
 		paths["/"+bare+".html"] = true
+		paths["/"+bare+"/"] = true
 	}
 }
 
