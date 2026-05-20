@@ -99,6 +99,7 @@ func LoadPageTemplatesFromRoot(templatesRoot string) ([]PageTemplate, error) {
 			"trimSuffix": strings.TrimSuffix,
 			"trimPrefix": strings.TrimPrefix,
 			"has":        hasString,
+			"pageSlug":   pageSlugFunc,
 		}).ParseFiles(parseFiles...)
 		if err != nil {
 			return nil, err
@@ -565,6 +566,19 @@ func parseSiteDataContract(raw []byte) (SiteDataContract, error) {
 	contract.Required = requiredPatterns
 	contract.Allowed = allowedPatterns
 	return contract, nil
+}
+
+// pageSlugFunc returns the URL slug for pageName by reading pages.<pageName>.slug
+// from siteData, falling back to pageName when the field is absent.
+func pageSlugFunc(siteData any, pageName string) string {
+	sd, _ := siteData.(map[string]any)
+	pagesData, _ := sd["pages"].(map[string]any)
+	pageData, _ := pagesData[pageName].(map[string]any)
+	slug, _ := pageData["slug"].(string)
+	if slug == "" {
+		return pageName
+	}
+	return slug
 }
 
 func dict(values ...any) (map[string]any, error) {

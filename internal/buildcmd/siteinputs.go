@@ -162,6 +162,18 @@ func resolveSiblingBasePaths(siteData map[string]any) []string {
 	return siblings
 }
 
+// resolvePageSlug returns the URL slug for a page. It reads pages.<name>.slug
+// from site data and falls back to pageName when absent.
+func resolvePageSlug(siteData map[string]any, pageName string) string {
+	pagesData, _ := siteData["pages"].(map[string]any)
+	pageData, _ := pagesData[pageName].(map[string]any)
+	slug, _ := pageData["slug"].(string)
+	if slug == "" {
+		return pageName
+	}
+	return slug
+}
+
 // filterInternalPages removes pages marked internal: true in the site data
 // (pages.<name>.internal). Such pages are still rendered (for asset usage
 // validation) but excluded from HTML output and sitemap generation.

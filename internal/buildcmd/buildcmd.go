@@ -235,7 +235,8 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 	allToCopy := make(map[string]string) // hashedRelPath → originalRelPath
 
 	for _, page := range pages {
-		target, err := resolvePageTarget(opts.outDir, page.Name, opts.cleanURLs)
+		slug := resolvePageSlug(siteData, page.Name)
+		target, err := resolvePageTarget(opts.outDir, slug, opts.cleanURLs)
 		if err != nil {
 			return err
 		}
@@ -244,6 +245,7 @@ func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemp
 			return fmt.Errorf("transforming %s: %w", target, err)
 		}
 		htmlOut = injectHreflangAlternates(htmlOut, siteData, page.Name, opts.cleanURLs)
+		htmlOut = injectLangSwitcherHrefs(htmlOut, siteData, page.Name, opts.cleanURLs)
 		for k, v := range pageCopy {
 			allToCopy[k] = v
 		}
