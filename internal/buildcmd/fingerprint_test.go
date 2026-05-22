@@ -190,7 +190,7 @@ func TestFingerprintLocalAssets_FingerprintsImgSrc(t *testing.T) {
 		"images/logo.png": "pngdata",
 	})
 	html := `<html><body><img src="/images/logo.png" alt="logo"></body></html>`
-	got, toCopy, err := fingerprintLocalAssets(html, dir)
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestFingerprintLocalAssets_SameAssetTwiceHashedOnce(t *testing.T) {
 		<img src="/images/logo.png" alt="a">
 		<img src="/images/logo.png" alt="b">
 	</body></html>`
-	got, toCopy, err := fingerprintLocalAssets(html, dir)
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestFingerprintLocalAssets_SameAssetTwiceHashedOnce(t *testing.T) {
 func TestFingerprintLocalAssets_SkipsExternalRefs(t *testing.T) {
 	dir := t.TempDir()
 	html := `<html><body><img src="https://cdn.example.com/logo.png"></body></html>`
-	got, toCopy, err := fingerprintLocalAssets(html, dir)
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestFingerprintLocalAssets_SkipsExternalRefs(t *testing.T) {
 func TestFingerprintLocalAssets_SkipsDataURIs(t *testing.T) {
 	dir := t.TempDir()
 	html := `<html><body><img src="data:image/png;base64,abc=" alt="x"></body></html>`
-	got, _, err := fingerprintLocalAssets(html, dir)
+	got, _, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestFingerprintLocalAssets_FingerprintsDataSrc(t *testing.T) {
 	// data-src is written by LQIP; the full-res image must also be fingerprinted.
 	dir := newFingerprintDir(t, map[string]string{"images/photo.webp": "webpdata"})
 	html := `<img class="lqip-pending" src="data:image/jpeg;base64,blurry" data-src="/images/photo.webp">`
-	got, toCopy, err := fingerprintLocalAssets(html, dir)
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestFingerprintLocalAssets_FingerprintsDataSrc(t *testing.T) {
 func TestFingerprintLocalAssets_FingerprintsScriptSrc(t *testing.T) {
 	dir := newFingerprintDir(t, map[string]string{"js/analytics.js": "console.log(1);"})
 	html := `<html><head></head><body><script src="/js/analytics.js"></script></body></html>`
-	got, toCopy, err := fingerprintLocalAssets(html, dir)
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestFingerprintLocalAssets_FingerprintsScriptSrc(t *testing.T) {
 func TestFingerprintLocalAssets_FingerprintsIconHref(t *testing.T) {
 	dir := newFingerprintDir(t, map[string]string{"favicon.ico": "ico"})
 	html := `<html><head><link rel="icon" href="/favicon.ico"></head></html>`
-	got, toCopy, err := fingerprintLocalAssets(html, dir)
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestFingerprintLocalAssets_FingerprintsIconHref(t *testing.T) {
 func TestFingerprintLocalAssets_FingerprintsManifestHref(t *testing.T) {
 	dir := newFingerprintDir(t, map[string]string{"manifest.json": `{"name":"app"}`})
 	html := `<html><head><link rel="manifest" href="/manifest.json"></head></html>`
-	got, _, err := fingerprintLocalAssets(html, dir)
+	got, _, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestFingerprintLocalAssets_FingerprintsManifestHref(t *testing.T) {
 func TestFingerprintLocalAssets_FingerprintsPreloadHref(t *testing.T) {
 	dir := newFingerprintDir(t, map[string]string{"fonts/inter.woff2": "woff2data"})
 	html := `<link rel="preload" href="/fonts/inter.woff2" as="font" crossorigin>`
-	got, toCopy, err := fingerprintLocalAssets(html, dir)
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestFingerprintLocalAssets_FingerprintsPreloadHref(t *testing.T) {
 func TestFingerprintLocalAssets_FingerprintsCSSURLInStyleBlock(t *testing.T) {
 	dir := newFingerprintDir(t, map[string]string{"fonts/inter.woff2": "fontbytes"})
 	html := `<html><head><style>@font-face{src:url("/fonts/inter.woff2")}</style></head></html>`
-	got, toCopy, err := fingerprintLocalAssets(html, dir)
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestFingerprintLocalAssets_FingerprintsCSSURLInStyleBlock(t *testing.T) {
 func TestFingerprintLocalAssets_MissingAssetLeftAsIs(t *testing.T) {
 	dir := t.TempDir()
 	html := `<img src="/images/ghost.png">`
-	got, toCopy, err := fingerprintLocalAssets(html, dir)
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -374,7 +374,7 @@ func TestFingerprintLocalAssets_ToCopyMapsHashedToOriginal(t *testing.T) {
 	dir := newFingerprintDir(t, map[string]string{"css/main.css": "body{}"})
 	// Reference via a <style>-less path — use script src to exercise toCopy.
 	html := `<script src="/css/main.css"></script>`
-	_, toCopy, err := fingerprintLocalAssets(html, dir)
+	_, toCopy, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -395,13 +395,77 @@ func TestFingerprintLocalAssets_ToCopyMapsHashedToOriginal(t *testing.T) {
 func TestFingerprintLocalAssets_RootRelativePreservesLeadingSlash(t *testing.T) {
 	dir := newFingerprintDir(t, map[string]string{"images/logo.png": "p"})
 	html := `<img src="/images/logo.png">`
-	got, _, err := fingerprintLocalAssets(html, dir)
+	got, _, err := fingerprintLocalAssets(html, dir, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Fingerprinted path must still start with /.
 	if !strings.Contains(got, `src="/images/logo.`) {
 		t.Errorf("expected root-relative fingerprinted path, got: %s", got)
+	}
+}
+
+func TestFingerprintLocalAssets_BasePathPrependedToAbsoluteRefs(t *testing.T) {
+	// Deployments served under a path prefix (e.g. petlook.app/en) must have
+	// their root-absolute asset refs rewritten to include the prefix, otherwise
+	// the browser requests them at the wrong path and they 404 (silently for
+	// fonts, which then fall back to a system font).
+	dir := newFingerprintDir(t, map[string]string{"fonts/inter.woff2": "fontbytes"})
+	html := `<html><head><style>@font-face{src:url("/fonts/inter.woff2")}</style></head>` +
+		`<body><img src="/fonts/inter.woff2"></body></html>`
+	got, toCopy, err := fingerprintLocalAssets(html, dir, "/en")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	hash := assetContentHash([]byte("fontbytes"))
+	// Both the <style> url() and the <img src> must be prefixed with /en/.
+	wantSubstr := "/en/fonts/inter." + hash + ".woff2"
+	if !strings.Contains(got, wantSubstr) {
+		t.Errorf("expected %q in output, got: %s", wantSubstr, got)
+	}
+	// The toCopy map keys are the on-disk paths (unprefixed) so the packer
+	// copies fonts/inter.HASH.woff2 — base_path is a URL concept, not a fs path.
+	if len(toCopy) != 1 {
+		t.Fatalf("expected 1 toCopy entry, got %d: %v", len(toCopy), toCopy)
+	}
+	for hashed := range toCopy {
+		if strings.HasPrefix(hashed, "en/") || strings.HasPrefix(hashed, "/en/") {
+			t.Errorf("toCopy key must not include base_path; got %q", hashed)
+		}
+	}
+}
+
+func TestFingerprintLocalAssets_BasePathWithTrailingSlashNormalized(t *testing.T) {
+	// Defensive: site_data["base_path"] is "/en" by convention but the
+	// rewriter must tolerate a trailing slash without double-slashing the URL.
+	dir := newFingerprintDir(t, map[string]string{"images/logo.png": "p"})
+	html := `<img src="/images/logo.png">`
+	got, _, err := fingerprintLocalAssets(html, dir, "/en/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(got, "/en//images/") {
+		t.Errorf("expected trailing slash on base_path to be normalized, got: %s", got)
+	}
+	if !strings.Contains(got, `src="/en/images/logo.`) {
+		t.Errorf("expected /en/images/logo.<hash>.png, got: %s", got)
+	}
+}
+
+func TestFingerprintLocalAssets_EmptyBasePathBehavesAsRoot(t *testing.T) {
+	// Empty base_path means root deployment; absolute refs stay /X (no prefix).
+	dir := newFingerprintDir(t, map[string]string{"images/logo.png": "p"})
+	html := `<img src="/images/logo.png">`
+	got, _, err := fingerprintLocalAssets(html, dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `src="/images/logo.`) {
+		t.Errorf("expected root-absolute fingerprinted path, got: %s", got)
+	}
+	// Must not have any double-slash artifact.
+	if strings.Contains(got, "//images/") {
+		t.Errorf("empty base_path must not produce //, got: %s", got)
 	}
 }
 

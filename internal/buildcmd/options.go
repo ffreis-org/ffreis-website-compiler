@@ -36,6 +36,11 @@ type buildOptions struct {
 	enableSanity            bool
 	strictContract          bool
 	cleanURLs               bool
+	// basePath mirrors site_data["base_path"] (e.g. "/en") and is populated by
+	// the build command after siteData is loaded. It is prepended to absolute
+	// asset references emitted by fingerprintLocalAssets so they remain
+	// reachable when the site is deployed under a path prefix.
+	basePath string
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {

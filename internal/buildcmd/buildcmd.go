@@ -96,6 +96,11 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 
+	// Cache base_path on opts so downstream transforms (e.g. fingerprintLocalAssets)
+	// can prepend it to root-absolute asset references for deployments served under
+	// a path prefix like "/en".
+	opts.basePath, _ = siteDataResult.Data["base_path"].(string)
+
 	// Load and process blog posts (after contract validation so injected data
 	// doesn't need contract entries; posts data is compiler-managed).
 	var loadedPosts []posts.Post
@@ -214,11 +219,10 @@ func Run(args []string, logger *slog.Logger) error {
 	// (the main cause of "access denied" in production) before S3 promotion.
 	// siblingBasePaths lists other deployments sharing the same bucket (e.g. "/en",
 	// "/jp") so cross-deployment links in the language switcher are not false-positives.
-	basePath, _ := siteDataResult.Data["base_path"].(string)
 	// Merge explicitly declared siblings (from -sibling-base-paths flag) with
 	// any auto-detected ones from ui.nav.lang_links in the site data.
 	siblingBasePaths := append(opts.siblingBasePaths, resolveSiblingBasePaths(siteDataResult.Data)...)
-	if err := linkcheck.ValidateAndReport(opts.outDir, basePath, siblingBasePaths); err != nil {
+	if err := linkcheck.ValidateAndReport(opts.outDir, opts.basePath, siblingBasePaths); err != nil {
 		return fmt.Errorf("link validation: %w", err)
 	}
 	logger.Info("internal link check passed", "out_dir", opts.outDir)

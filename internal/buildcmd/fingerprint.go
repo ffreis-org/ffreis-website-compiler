@@ -41,9 +41,15 @@ func isDataURI(ref string) bool {
 //
 // CSS url() inside inline <style> blocks is also rewritten. Data URIs and
 // external URLs are left unchanged.
-func fingerprintLocalAssets(html, assetsDir string) (string, map[string]string, error) {
+//
+// basePath is prepended to root-absolute asset references (those starting with
+// "/") so they remain reachable when the site is deployed under a path prefix
+// like "/en". Empty for root-served sites. Relative references are untouched —
+// they resolve correctly against the document's URL regardless of base path.
+func fingerprintLocalAssets(html, assetsDir, basePath string) (string, map[string]string, error) {
 	hashCache := make(map[string]string) // cleanRelPath → 8-char hash
 	toCopy := make(map[string]string)    // hashedRelPath → originalRelPath
+	normalizedBase := strings.TrimRight(basePath, "/")
 
 	resolve := func(ref string) (string, error) {
 		if ref == "" || isExternalRef(ref) || isDataURI(ref) {
@@ -61,7 +67,7 @@ func fingerprintLocalAssets(html, assetsDir string) (string, map[string]string, 
 		hashed := insertHashInPath(cleanRef, hash)
 		toCopy[hashed] = cleanRef
 		if strings.HasPrefix(ref, "/") {
-			return "/" + hashed, nil
+			return normalizedBase + "/" + hashed, nil
 		}
 		return hashed, nil
 	}

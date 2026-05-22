@@ -38,8 +38,8 @@ type SiteDataLoadResult struct {
 }
 
 type SiteDataContract struct {
-	Required         []string `yaml:"required"`
-	Allowed          []string `yaml:"allowed"`
+	Required []string `yaml:"required"`
+	Allowed  []string `yaml:"allowed"`
 	// CompilerConsumed lists paths that are read by the compiler's Go code rather
 	// than by templates. They must be present in data (not dangling) and templates
 	// may optionally access them, but the strict-contract check never requires

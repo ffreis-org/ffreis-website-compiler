@@ -58,8 +58,10 @@ func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *e
 	}
 
 	// Fingerprint all remaining external local asset references so CloudFront
-	// can serve them with immutable (1-year) cache headers.
-	fingerprintedHTML, toCopy, err := fingerprintLocalAssets(html, assetsDir)
+	// can serve them with immutable (1-year) cache headers. basePath is
+	// prepended to root-absolute refs so they resolve correctly when the site
+	// is deployed under a path prefix (e.g. petlook /en, /pt, /jp).
+	fingerprintedHTML, toCopy, err := fingerprintLocalAssets(html, assetsDir, opts.basePath)
 	if err != nil {
 		return "", nil, fmt.Errorf("fingerprinting assets: %w", err)
 	}
@@ -164,7 +166,7 @@ func injectCachedScriptPreloads(html string) string {
 		sb.WriteString(src)
 		sb.WriteString("\">\n    ")
 	}
-	inject := strings.TrimRight(sb.String(), "\n    ")
+	inject := strings.TrimRight(sb.String(), "\n ")
 	if inject == "" {
 		return html
 	}
