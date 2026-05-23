@@ -1,6 +1,7 @@
 package buildcmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
@@ -21,8 +22,49 @@ func injectNavigationEnhancements(html string) string {
 	return strings.Replace(html, "</head>", inject+"\n</head>", 1)
 }
 
+const defaultTrackerCDNBase = "https://cdn.ffreis.com"
+
+// injectTracker injects the versioned ffreis-tracker-sdk <script src=...> tag
+// plus a Tracker.init(...) snippet before </head>. It is a no-op when the
+// tracker is disabled or required config is missing.
+//
+// The init snippet runs on DOMContentLoaded so the script is loaded with defer
+// without races against the rest of the page. Both siteId and endpoint are
+// JSON-encoded to escape quotes safely.
+func injectTracker(html string, opts buildOptions) string {
+	if !opts.trackerEnabled {
+		return html
+	}
+	if opts.trackerSDKVersion == "" || opts.trackerSiteID == "" || opts.trackerEndpoint == "" {
+		return html
+	}
+	cdnBase := opts.trackerCDNBase
+	if cdnBase == "" {
+		cdnBase = defaultTrackerCDNBase
+	}
+	cdnBase = strings.TrimRight(cdnBase, "/")
+	siteID := jsonQuote(opts.trackerSiteID)
+	endpoint := jsonQuote(opts.trackerEndpoint)
+	inject := fmt.Sprintf(
+		`<script src="%s/tracker-sdk/v%s/tracker.min.js" defer></script>`+
+			"\n    "+
+			`<script>window.addEventListener('DOMContentLoaded',function(){if(window.Tracker)window.Tracker.init({siteId:%s,endpoint:%s});});</script>`,
+		cdnBase, opts.trackerSDKVersion, siteID, endpoint,
+	)
+	return strings.Replace(html, "</head>", inject+"\n</head>", 1)
+}
+
+// jsonQuote returns a JSON-quoted string literal safe to embed inline in a
+// JavaScript object literal. json.Marshal escapes quotes, backslashes, and
+// any control characters; it cannot fail for a plain string input.
+func jsonQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
 func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *externalAssetMirrorer) (string, map[string]string, error) {
 	html = injectNavigationEnhancements(html)
+	html = injectTracker(html, opts)
 
 	if opts.inlineAssets {
 		// Full asset inlining (CSS + JS + images). Converts url() to data URIs so the

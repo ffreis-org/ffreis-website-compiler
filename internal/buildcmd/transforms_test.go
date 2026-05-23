@@ -564,3 +564,78 @@ func TestRun_SameAssetFingerprintedConsistentlyAcrossPages(t *testing.T) {
 		t.Errorf("expected same fingerprinted path on both pages, got:\n  index:  %q\n  agenda: %q", srcIndex, srcAgenda)
 	}
 }
+
+// ── injectTracker ─────────────────────────────────────────────────────────────
+
+func TestInjectTracker_NoopWhenDisabled(t *testing.T) {
+	html := `<html><head><title>X</title></head><body></body></html>`
+	got := injectTracker(html, buildOptions{trackerEnabled: false})
+	if got != html {
+		t.Errorf("expected no change when disabled, got: %s", got)
+	}
+}
+
+func TestInjectTracker_NoopWhenRequiredFieldsMissing(t *testing.T) {
+	html := `<html><head></head><body></body></html>`
+	// enabled=true but version/site/endpoint empty → no injection
+	got := injectTracker(html, buildOptions{trackerEnabled: true})
+	if strings.Contains(got, "tracker-sdk") {
+		t.Errorf("expected no injection when fields missing, got: %s", got)
+	}
+}
+
+func TestInjectTracker_InjectsScriptAndInitBeforeHeadClose(t *testing.T) {
+	html := `<html><head><title>X</title></head><body></body></html>`
+	got := injectTracker(html, buildOptions{
+		trackerEnabled:    true,
+		trackerSDKVersion: "1.2.3",
+		trackerSiteID:     "flemming",
+		trackerEndpoint:   "https://events.flemming.com.br",
+	})
+	if !strings.Contains(got, `src="https://cdn.ffreis.com/tracker-sdk/v1.2.3/tracker.min.js"`) {
+		t.Errorf("expected SDK script src with pinned version, got: %s", got)
+	}
+	if !strings.Contains(got, `siteId:"flemming"`) {
+		t.Errorf("expected JSON-quoted siteId, got: %s", got)
+	}
+	if !strings.Contains(got, `endpoint:"https://events.flemming.com.br"`) {
+		t.Errorf("expected JSON-quoted endpoint, got: %s", got)
+	}
+	if !strings.Contains(got, "DOMContentLoaded") {
+		t.Errorf("expected DOMContentLoaded gate, got: %s", got)
+	}
+	// Injected block must end before </head>.
+	headEnd := strings.Index(got, "</head>")
+	scriptStart := strings.Index(got, "tracker-sdk")
+	if scriptStart < 0 || headEnd < 0 || scriptStart > headEnd {
+		t.Errorf("expected script before </head>; scriptStart=%d headEnd=%d", scriptStart, headEnd)
+	}
+}
+
+func TestInjectTracker_OverrideCDNBase(t *testing.T) {
+	html := `<html><head></head><body></body></html>`
+	got := injectTracker(html, buildOptions{
+		trackerEnabled:    true,
+		trackerSDKVersion: "0.9.0",
+		trackerSiteID:     "ffreis",
+		trackerEndpoint:   "https://events.ffreis.com",
+		trackerCDNBase:    "https://cdn-staging.example.com/",
+	})
+	if !strings.Contains(got, `src="https://cdn-staging.example.com/tracker-sdk/v0.9.0/tracker.min.js"`) {
+		t.Errorf("expected overridden CDN base (trailing slash trimmed), got: %s", got)
+	}
+}
+
+func TestInjectTracker_QuotesEmbeddedInValuesAreEscaped(t *testing.T) {
+	html := `<html><head></head><body></body></html>`
+	// A pathological siteId with a quote should be safely encoded.
+	got := injectTracker(html, buildOptions{
+		trackerEnabled:    true,
+		trackerSDKVersion: "1.0.0",
+		trackerSiteID:     `flem"ming`,
+		trackerEndpoint:   "https://events.example.com",
+	})
+	if !strings.Contains(got, `siteId:"flem\"ming"`) {
+		t.Errorf("expected escaped quote in siteId, got: %s", got)
+	}
+}

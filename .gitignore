@@ -35,3 +35,8 @@ cmd/website-compiler/website-compiler
 
 scripts/hooks/
 scripts/bootstrap_lefthook.sh
+
+# Built binaries at repo root (from go build ./cmd/...)
+/check-lang-parity
+/website-compiler
+/build-static

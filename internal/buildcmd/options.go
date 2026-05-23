@@ -41,6 +41,14 @@ type buildOptions struct {
 	// asset references emitted by fingerprintLocalAssets so they remain
 	// reachable when the site is deployed under a path prefix.
 	basePath string
+	// Tracker SDK injection. When trackerEnabled is true the compiler injects a
+	// <script> tag pointing at cdn.ffreis.com plus a Tracker.init(...) snippet
+	// before </head> on every rendered page. Sourced from per-site inventory.
+	trackerEnabled    bool
+	trackerSDKVersion string
+	trackerSiteID     string
+	trackerEndpoint   string
+	trackerCDNBase    string // override (mostly for tests); empty uses cdn.ffreis.com
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {
@@ -77,6 +85,12 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.projectsFile, "projects-file", "", "path to projects.yaml (ffreis-projects repo); enables /projects/ paginated page generation when set")
 	fs.StringVar(&opts.coursesFile, "courses-file", "", "path to courses.yaml (ffreis-courses repo); enables /courses/ paginated page generation when set")
 	fs.IntVar(&opts.itemsPerPage, "items-per-page", 12, "number of items per paginated page for projects, courses, and blog")
+
+	fs.BoolVar(&opts.trackerEnabled, "tracker-enabled", false, "inject the ffreis-tracker-sdk script tag + Tracker.init(...) before </head>; requires -tracker-sdk-version, -tracker-site-id, -tracker-endpoint")
+	fs.StringVar(&opts.trackerSDKVersion, "tracker-sdk-version", "", "semver of the SDK to load from the CDN (e.g. 1.0.0); pinned per site in inventory.yaml")
+	fs.StringVar(&opts.trackerSiteID, "tracker-site-id", "", "site identifier passed to Tracker.init (e.g. flemming, ffreis, petlook)")
+	fs.StringVar(&opts.trackerEndpoint, "tracker-endpoint", "", "ingestion endpoint passed to Tracker.init (e.g. https://events.flemming.com.br)")
+	fs.StringVar(&opts.trackerCDNBase, "tracker-cdn-base", "", "override the CDN base URL for the SDK script (defaults to https://cdn.ffreis.com)")
 
 	if err := fs.Parse(args); err != nil {
 		return buildOptions{}, err
