@@ -8,7 +8,7 @@ both locally (via `ffreis-siteops`) and in CI/CD (via `ffreis-website-deployer`)
 For the complete system map — how this repo relates to siteops, the deployer,
 the inventory, and each website — see the private fleet inventory repository:
 
-> `FelipeFuhr/ffreis-website-inventory` → `AGENTS.md`
+> the fleet inventory (private repo — do not name it in commits or PR descriptions)
 
 Architecture detail (compiler layout detection in CI, command reference): `AGENTS.md`
 links to `docs/ARCHITECTURE.md` in the same repo.
@@ -27,6 +27,14 @@ The compiler registers these functions in `internal/sitegen/sitegen.go`:
 - `required(v, msg)` — panics with msg if v is nil/zero
 - `trimSuffix(s, suffix)` — wraps `strings.TrimSuffix`
 - `has(slice, val)` — returns true if val (string) is present in slice ([]any or []string); used by listing templates to check `available_languages` membership
+
+## Public repo — private-repo hygiene
+
+This is a **public** GitHub repository. When writing commit messages, PR titles,
+PR descriptions, or any other user-visible text, **never name private repos** —
+website content, inventory, infra, Lambda, or data repos that are not publicly
+listed. Use generic terms instead: "the fleet inventory", "a private consumer",
+"internal infra", "private data repo", etc.
 
 ## Content-level language routing (`available_languages`)
 
