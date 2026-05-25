@@ -13,11 +13,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   mutation:
+    permissions:
+      contents: read
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-mutation.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
     with:
       packages: "./internal/..."

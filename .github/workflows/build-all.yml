@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   build:
+    permissions:
+      contents: read
     uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-cross-build-matrix.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
     with:
       go-version: "1.25.8"
