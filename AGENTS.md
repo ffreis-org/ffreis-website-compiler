@@ -54,7 +54,7 @@ The compiler handles this via an `available_languages` field on each content ite
     to forward the visitor to the best available language version. Redirect target
     priority: `language_default` (from shared site data) → `en` → first in the list.
 
-**Blog posts** (`ffreis-posts/<slug>/index.md` frontmatter):
+**Blog posts** (`<posts-repo>/<slug>/index.md` frontmatter):
 ```yaml
 available_languages: [en]
 ```
