@@ -3,7 +3,7 @@ name: API Gateway Smoke
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 4 * * *'
+    - cron: '36 21 8 * *'  # monthly scattered (was: 15 4 * * *)
 
 jobs:
   smoke:

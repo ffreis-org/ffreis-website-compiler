@@ -2,7 +2,7 @@ name: Mutation Testing
 
 on:
   schedule:
-    - cron: "0 2 1 * *"   # 1st of every month, 02:00 UTC
+    - cron: "0 19 6 * *"  # monthly scattered (was: 0 2 1 * *)
   workflow_dispatch:
     inputs:
       reason:

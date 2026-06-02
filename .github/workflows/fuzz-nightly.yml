@@ -2,7 +2,7 @@ name: Monthly Fuzz
 
 on:
   schedule:
-    - cron: '0 2 1 * *'
+    - cron: '7 1 22 * *'  # monthly scattered (was: 0 2 1 * *)
   workflow_dispatch:
     inputs:
       reason:
