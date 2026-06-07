@@ -40,3 +40,4 @@ scripts/bootstrap_lefthook.sh
 /check-lang-parity
 /website-compiler
 /build-static
+/website-compiler-new
