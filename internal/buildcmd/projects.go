@@ -49,7 +49,10 @@ func writeProjectPages(
 	assetsDir string,
 	mirrorer *externalAssetMirrorer,
 ) ([]sitemap.URLItem, error) {
-	return writePaginatedPages(logger, opts, projectTpl, projects.ToSiteDataList(list), "projects", siteData, assetsDir, mirrorer)
+	return writePaginatedPages(paginatedWriteArgs{
+		logger: logger, opts: opts, tmpl: projectTpl, items: projects.ToSiteDataList(list),
+		sectionName: "projects", siteData: siteData, assetsDir: assetsDir, mirrorer: mirrorer,
+	})
 }
 
 // writeCoursePages generates /courses/index.html (page 1) and
@@ -63,5 +66,8 @@ func writeCoursePages(
 	assetsDir string,
 	mirrorer *externalAssetMirrorer,
 ) ([]sitemap.URLItem, error) {
-	return writePaginatedPages(logger, opts, coursesTpl, courses.ToSiteDataList(list), "courses", siteData, assetsDir, mirrorer)
+	return writePaginatedPages(paginatedWriteArgs{
+		logger: logger, opts: opts, tmpl: coursesTpl, items: courses.ToSiteDataList(list),
+		sectionName: "courses", siteData: siteData, assetsDir: assetsDir, mirrorer: mirrorer,
+	})
 }

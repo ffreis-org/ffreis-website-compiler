@@ -42,34 +42,25 @@ func injectHreflangAlternates(html string, siteData map[string]any, pageName str
 
 	var links strings.Builder
 	for _, v := range variants {
-		var slug string
-		if v.hreflang == htmlLang {
-			slug = currentSlug
-		} else {
-			slug = resolveSlugForLang(slugMaps, v.hreflang, pageName)
-		}
+		slug := resolveVariantSlug(slugMaps, v.hreflang, htmlLang, currentSlug, pageName)
 		fmt.Fprintf(&links, `<link rel="alternate" hreflang="%s" href="%s">`,
 			v.hreflang, buildAlternateURL(baseURL, v.path, slug, cleanURLs))
 		links.WriteByte('\n')
 	}
 	if defaultHreflang != "" {
 		for _, v := range variants {
-			if v.hreflang == defaultHreflang {
-				var slug string
-				if v.hreflang == htmlLang {
-					slug = currentSlug
-				} else {
-					slug = resolveSlugForLang(slugMaps, v.hreflang, pageName)
-				}
-				fmt.Fprintf(&links, `<link rel="alternate" hreflang="x-default" href="%s">`,
-					buildAlternateURL(baseURL, v.path, slug, cleanURLs))
-				links.WriteByte('\n')
-				break
+			if v.hreflang != defaultHreflang {
+				continue
 			}
+			slug := resolveVariantSlug(slugMaps, v.hreflang, htmlLang, currentSlug, pageName)
+			fmt.Fprintf(&links, `<link rel="alternate" hreflang="x-default" href="%s">`,
+				buildAlternateURL(baseURL, v.path, slug, cleanURLs))
+			links.WriteByte('\n')
+			break
 		}
 	}
 
-	return strings.Replace(html, "</head>", links.String()+"</head>", 1)
+	return strings.Replace(html, headEndTag, links.String()+headEndTag, 1)
 }
 
 // injectLangSwitcherHrefs replaces the static root href on each non-active
@@ -108,6 +99,15 @@ func injectLangSwitcherHrefs(html string, siteData map[string]any, pageName stri
 		html = re.ReplaceAllString(html, `class="lang-flag" href="`+newHref+`"`)
 	}
 	return html
+}
+
+// resolveVariantSlug returns the slug for a language variant, using currentSlug
+// when hreflang matches the page's own language, otherwise looking up slug_map.
+func resolveVariantSlug(slugMaps map[string]map[string]string, hreflang, htmlLang, currentSlug, pageName string) string {
+	if hreflang == htmlLang {
+		return currentSlug
+	}
+	return resolveSlugForLang(slugMaps, hreflang, pageName)
 }
 
 func buildAlternateURL(baseURL, langPath, slug string, cleanURLs bool) string {

@@ -19,10 +19,14 @@ func injectNavigationEnhancements(html string) string {
 	const inject = `<style>@view-transition{navigation:auto}</style>` +
 		"\n    " +
 		`<script type="speculationrules">{"prerender":[{"where":{"href_matches":"/*"},"eagerness":"moderate"}]}</script>`
-	return strings.Replace(html, "</head>", inject+"\n</head>", 1)
+	return strings.Replace(html, headEndTag, inject+headEndReplacement, 1)
 }
 
-const defaultTrackerCDNBase = "https://cdn.ffreis.com"
+const (
+	defaultTrackerCDNBase = "https://cdn.ffreis.com"
+	headEndTag            = "</head>"
+	headEndReplacement    = "\n" + headEndTag
+)
 
 // injectTracker injects the versioned ffreis-tracker-sdk <script src=...> tag
 // plus a Tracker.init(...) snippet before </head>. It is a no-op when the
@@ -51,7 +55,7 @@ func injectTracker(html string, opts buildOptions) string {
 			`<script>window.addEventListener('DOMContentLoaded',function(){if(window.Tracker)window.Tracker.init({siteId:%s,endpoint:%s});});</script>`,
 		cdnBase, opts.trackerSDKVersion, siteID, endpoint,
 	)
-	return strings.Replace(html, "</head>", inject+"\n</head>", 1)
+	return strings.Replace(html, headEndTag, inject+headEndReplacement, 1)
 }
 
 // jsonQuote returns a JSON-quoted string literal safe to embed inline in a
@@ -212,7 +216,7 @@ func injectCachedScriptPreloads(html string) string {
 	if inject == "" {
 		return html
 	}
-	return headEndRE.ReplaceAllString(html, inject+"\n</head>")
+	return headEndRE.ReplaceAllString(html, inject+headEndReplacement)
 }
 
 // transformStylesheets applies position-based CSS loading: stylesheet links in <head>

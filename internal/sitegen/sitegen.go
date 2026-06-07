@@ -288,26 +288,36 @@ func ValidateSiteData(siteData map[string]any, contract SiteDataContract) error 
 	}
 
 	allPaths, leafPaths := collectPaths(siteData)
-	var validationErrors []string
-
-	for _, pattern := range requiredPatterns {
-		if !anyPathMatches(allPaths, pattern) {
-			validationErrors = append(validationErrors, fmt.Sprintf("missing required site data path: %s", pattern))
-		}
-	}
-
-	if len(allowedPatterns) > 0 || len(compilerConsumedPatterns) > 0 {
-		for _, path := range leafPaths {
-			if !anyPatternMatches(path, allowedPatterns) && !anyPatternMatches(path, compilerConsumedPatterns) {
-				validationErrors = append(validationErrors, fmt.Sprintf("dangling site data path not declared in contract: %s", path))
-			}
-		}
-	}
+	validationErrors := missingRequiredErrors(allPaths, requiredPatterns)
+	validationErrors = append(validationErrors, danglingPathErrors(leafPaths, allowedPatterns, compilerConsumedPatterns)...)
 
 	if len(validationErrors) > 0 {
 		return errors.New(strings.Join(validationErrors, "; "))
 	}
 	return nil
+}
+
+func missingRequiredErrors(allPaths, requiredPatterns []string) []string {
+	var errs []string
+	for _, pattern := range requiredPatterns {
+		if !anyPathMatches(allPaths, pattern) {
+			errs = append(errs, fmt.Sprintf("missing required site data path: %s", pattern))
+		}
+	}
+	return errs
+}
+
+func danglingPathErrors(leafPaths, allowedPatterns, compilerConsumedPatterns []string) []string {
+	if len(allowedPatterns) == 0 && len(compilerConsumedPatterns) == 0 {
+		return nil
+	}
+	var errs []string
+	for _, path := range leafPaths {
+		if !anyPatternMatches(path, allowedPatterns) && !anyPatternMatches(path, compilerConsumedPatterns) {
+			errs = append(errs, fmt.Sprintf("dangling site data path not declared in contract: %s", path))
+		}
+	}
+	return errs
 }
 
 func ValidateSiteDataContractUsage(contract SiteDataContract, usedPaths []string) error {

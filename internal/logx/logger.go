@@ -12,6 +12,8 @@ func New(service string) *slog.Logger {
 	return newWithEnv(service, os.Getenv, os.Stderr)
 }
 
+const invalidLogEnvMsg = "invalid log env; using default"
+
 func newWithEnv(service string, getenv func(string) string, w io.Writer) *slog.Logger {
 	format, formatWarn := parseFormat(getenv("LOG_FORMAT"))
 	level, levelWarn := parseLevel(getenv("LOG_LEVEL"))
@@ -34,7 +36,7 @@ func newWithEnv(service string, getenv func(string) string, w io.Writer) *slog.L
 
 	if levelWarn != nil {
 		logger.Warn(
-			"invalid log env; using default",
+			invalidLogEnvMsg,
 			"key", "LOG_LEVEL",
 			"value", strings.TrimSpace(getenv("LOG_LEVEL")),
 			"default", "info",
@@ -43,7 +45,7 @@ func newWithEnv(service string, getenv func(string) string, w io.Writer) *slog.L
 
 	if formatWarn != nil {
 		logger.Warn(
-			"invalid log env; using default",
+			invalidLogEnvMsg,
 			"key", "LOG_FORMAT",
 			"value", strings.TrimSpace(getenv("LOG_FORMAT")),
 			"default", "text",
@@ -52,7 +54,7 @@ func newWithEnv(service string, getenv func(string) string, w io.Writer) *slog.L
 
 	if sourceWarn != nil {
 		logger.Warn(
-			"invalid log env; using default",
+			invalidLogEnvMsg,
 			"key", "LOG_SOURCE",
 			"value", strings.TrimSpace(getenv("LOG_SOURCE")),
 			"default", "false",

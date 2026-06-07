@@ -73,7 +73,10 @@ func writeBlogPaginatedPages(
 	for i, p := range postList {
 		allItems[i] = postToMap(p)
 	}
-	return writePaginatedPages(logger, opts, blogTpl, allItems, "blog", siteData, assetsDir, mirrorer)
+	return writePaginatedPages(paginatedWriteArgs{
+		logger: logger, opts: opts, tmpl: blogTpl, items: allItems,
+		sectionName: "blog", siteData: siteData, assetsDir: assetsDir, mirrorer: mirrorer,
+	})
 }
 
 // writePostPages renders and writes one HTML file per post using the post template.

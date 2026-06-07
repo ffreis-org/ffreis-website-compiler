@@ -33,6 +33,59 @@ func isDataURI(ref string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(ref)), "data:")
 }
 
+// assetResolver holds the shared state for resolving local asset references
+// to their content-hashed equivalents during fingerprinting.
+type assetResolver struct {
+	assetsDir      string
+	normalizedBase string
+	hashCache      map[string]string // cleanRelPath → 8-char hash
+	toCopy         map[string]string // hashedRelPath → originalRelPath
+}
+
+func newAssetResolver(assetsDir, basePath string) *assetResolver {
+	return &assetResolver{
+		assetsDir:      assetsDir,
+		normalizedBase: strings.TrimRight(basePath, "/"),
+		hashCache:      make(map[string]string),
+		toCopy:         make(map[string]string),
+	}
+}
+
+func (r *assetResolver) resolve(ref string) (string, error) {
+	if ref == "" || isExternalRef(ref) || isDataURI(ref) {
+		return ref, nil
+	}
+	data, cleanRef, err := readAsset(r.assetsDir, ref)
+	if err != nil {
+		return ref, nil // asset not found — leave as-is
+	}
+	hash, ok := r.hashCache[cleanRef]
+	if !ok {
+		hash = assetContentHash(data)
+		r.hashCache[cleanRef] = hash
+	}
+	hashed := insertHashInPath(cleanRef, hash)
+	r.toCopy[hashed] = cleanRef
+	if strings.HasPrefix(ref, "/") {
+		return r.normalizedBase + "/" + hashed, nil
+	}
+	return hashed, nil
+}
+
+// rewriteTagAttr replaces oldVal with newVal for the named attribute in tag.
+func rewriteTagAttr(tag, attr, oldVal, newVal string) string {
+	if oldVal == newVal {
+		return tag
+	}
+	for _, q := range []string{`"`, `'`} {
+		placeholder := attr + "=" + q + oldVal + q
+		if strings.Contains(tag, placeholder) {
+			return strings.Replace(tag, placeholder, attr+"="+q+newVal+q, 1)
+		}
+	}
+	return tag
+}
+
 // fingerprintLocalAssets rewrites all local asset references in html to use
 // content-hashed filenames (e.g. "portrait.a1b2c3d4.webp") so the packer
 // can serve them with the immutable cache tier. Returns the rewritten html
@@ -47,44 +100,7 @@ func isDataURI(ref string) bool {
 // like "/en". Empty for root-served sites. Relative references are untouched —
 // they resolve correctly against the document's URL regardless of base path.
 func fingerprintLocalAssets(html, assetsDir, basePath string) (string, map[string]string, error) {
-	hashCache := make(map[string]string) // cleanRelPath → 8-char hash
-	toCopy := make(map[string]string)    // hashedRelPath → originalRelPath
-	normalizedBase := strings.TrimRight(basePath, "/")
-
-	resolve := func(ref string) (string, error) {
-		if ref == "" || isExternalRef(ref) || isDataURI(ref) {
-			return ref, nil
-		}
-		data, cleanRef, err := readAsset(assetsDir, ref)
-		if err != nil {
-			return ref, nil // asset not found — leave as-is
-		}
-		hash, ok := hashCache[cleanRef]
-		if !ok {
-			hash = assetContentHash(data)
-			hashCache[cleanRef] = hash
-		}
-		hashed := insertHashInPath(cleanRef, hash)
-		toCopy[hashed] = cleanRef
-		if strings.HasPrefix(ref, "/") {
-			return normalizedBase + "/" + hashed, nil
-		}
-		return hashed, nil
-	}
-
-	rewriteAttr := func(tag, attr, oldVal, newVal string) string {
-		if oldVal == newVal {
-			return tag
-		}
-		for _, q := range []string{`"`, `'`} {
-			placeholder := attr + "=" + q + oldVal + q
-			if strings.Contains(tag, placeholder) {
-				return strings.Replace(tag, placeholder, attr+"="+q+newVal+q, 1)
-			}
-		}
-		return tag
-	}
-
+	r := newAssetResolver(assetsDir, basePath)
 	var err error
 
 	// <img src="..."> — skip data URIs placed there by LQIP processing
@@ -93,76 +109,74 @@ func fingerprintLocalAssets(html, assetsDir, basePath string) (string, map[strin
 		if isDataURI(src) {
 			return tag, nil
 		}
-		newSrc, e := resolve(src)
-		return rewriteAttr(tag, "src", src, newSrc), e
+		newSrc, e := r.resolve(src)
+		return rewriteTagAttr(tag, "src", src, newSrc), e
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("fingerprinting img src: %w", err)
 	}
 
-	// <img data-src="..."> written by LQIP processing
-	html = dataSrcAttrRE.ReplaceAllStringFunc(html, func(m string) string {
+	html, err = fingerprintDataSrc(html, r)
+	if err != nil {
+		return "", nil, fmt.Errorf("fingerprinting data-src: %w", err)
+	}
+
+	// Simple href-attribute tags: preload, icon, manifest, script src.
+	type hrefTag struct {
+		re   *regexp.Regexp
+		attr string
+		desc string
+	}
+	for _, ht := range []hrefTag{
+		{preloadTagRE, "href", "preload href"},
+		{iconTagRE, "href", "icon href"},
+		{manifestTagRE, "href", "manifest href"},
+		{scriptTagRE, "src", "script src"},
+	} {
+		html, err = replaceTagWith(html, ht.re, func(tag string, refs []string) (string, error) {
+			old := refs[1]
+			newVal, e := r.resolve(old)
+			return rewriteTagAttr(tag, ht.attr, old, newVal), e
+		})
 		if err != nil {
+			return "", nil, fmt.Errorf("fingerprinting %s: %w", ht.desc, err)
+		}
+	}
+
+	html, err = fingerprintStyleBlocks(html, r)
+	if err != nil {
+		return "", nil, fmt.Errorf("fingerprinting CSS url(): %w", err)
+	}
+
+	return html, r.toCopy, nil
+}
+
+// fingerprintDataSrc rewrites data-src attributes written by LQIP processing.
+func fingerprintDataSrc(html string, r *assetResolver) (string, error) {
+	var outerErr error
+	html = dataSrcAttrRE.ReplaceAllStringFunc(html, func(m string) string {
+		if outerErr != nil {
 			return m
 		}
 		parts := dataSrcAttrRE.FindStringSubmatch(m)
 		if parts == nil {
 			return m
 		}
-		newRef, e := resolve(parts[2])
+		newRef, e := r.resolve(parts[2])
 		if e != nil {
-			err = e
+			outerErr = e
 			return m
 		}
 		return parts[1] + newRef + parts[3]
 	})
-	if err != nil {
-		return "", nil, fmt.Errorf("fingerprinting data-src: %w", err)
-	}
+	return html, outerErr
+}
 
-	// <link rel="preload" href="...">
-	html, err = replaceTagWith(html, preloadTagRE, func(tag string, refs []string) (string, error) {
-		href := refs[1]
-		newHref, e := resolve(href)
-		return rewriteAttr(tag, "href", href, newHref), e
-	})
-	if err != nil {
-		return "", nil, fmt.Errorf("fingerprinting preload href: %w", err)
-	}
-
-	// <link rel="icon" href="..."> and <link rel="apple-touch-icon" href="...">
-	html, err = replaceTagWith(html, iconTagRE, func(tag string, refs []string) (string, error) {
-		href := refs[1]
-		newHref, e := resolve(href)
-		return rewriteAttr(tag, "href", href, newHref), e
-	})
-	if err != nil {
-		return "", nil, fmt.Errorf("fingerprinting icon href: %w", err)
-	}
-
-	// <link rel="manifest" href="...">
-	html, err = replaceTagWith(html, manifestTagRE, func(tag string, refs []string) (string, error) {
-		href := refs[1]
-		newHref, e := resolve(href)
-		return rewriteAttr(tag, "href", href, newHref), e
-	})
-	if err != nil {
-		return "", nil, fmt.Errorf("fingerprinting manifest href: %w", err)
-	}
-
-	// <script src="...">
-	html, err = replaceTagWith(html, scriptTagRE, func(tag string, refs []string) (string, error) {
-		src := refs[1]
-		newSrc, e := resolve(src)
-		return rewriteAttr(tag, "src", src, newSrc), e
-	})
-	if err != nil {
-		return "", nil, fmt.Errorf("fingerprinting script src: %w", err)
-	}
-
-	// url() inside inline <style> blocks (font @font-face src, background-image, etc.)
+// fingerprintStyleBlocks rewrites url() references inside inline <style> blocks.
+func fingerprintStyleBlocks(html string, r *assetResolver) (string, error) {
+	var outerErr error
 	html = styleBlockRE.ReplaceAllStringFunc(html, func(block string) string {
-		if err != nil {
+		if outerErr != nil {
 			return block
 		}
 		parts := styleBlockRE.FindStringSubmatch(block)
@@ -174,18 +188,14 @@ func fingerprintLocalAssets(html, assetsDir, basePath string) (string, map[strin
 			if isExternalRef(ref) || isDataURI(ref) {
 				return ref, false, nil
 			}
-			newRef, e2 := resolve(ref)
+			newRef, e2 := r.resolve(ref)
 			return newRef, newRef != ref, e2
 		})
 		if e != nil {
-			err = e
+			outerErr = e
 			return block
 		}
 		return openTag + newCSS + closeTag
 	})
-	if err != nil {
-		return "", nil, fmt.Errorf("fingerprinting CSS url(): %w", err)
-	}
-
-	return html, toCopy, nil
+	return html, outerErr
 }

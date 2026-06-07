@@ -6,10 +6,10 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	_ "image/png"
+	_ "image/png" // register PNG decoder for image.Decode
 	"strings"
 
-	_ "golang.org/x/image/webp"
+	_ "golang.org/x/image/webp" // register WebP decoder for image.Decode
 )
 
 const lqipThumbSize = 20 // pixels wide
@@ -68,7 +68,7 @@ func processLQIPImages(html, assetsDir string) (string, error) {
 		return html, nil
 	}
 
-	html = strings.Replace(html, "</head>", lqipCSS+"\n</head>", 1)
+	html = strings.Replace(html, headEndTag, lqipCSS+headEndReplacement, 1)
 	if strings.Contains(html, "</body>") {
 		html = strings.Replace(html, "</body>", lqipScript+"\n</body>", 1)
 	} else {
