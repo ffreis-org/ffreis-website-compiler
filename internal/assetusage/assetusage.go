@@ -309,7 +309,7 @@ func shouldSkipAssetURL(parsed *url.URL, trimmedRef string) bool {
 	}
 
 	lower := strings.ToLower(cleanPath)
-	return strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "javascript:")
+	return strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "javascript:") || strings.HasPrefix(lower, "vbscript:")
 }
 
 func joinAndCleanAssetPath(baseDir, rawPath string) string {

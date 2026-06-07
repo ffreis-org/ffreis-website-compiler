@@ -241,6 +241,7 @@ func shouldSkipExternalURL(trimmedRef string) bool {
 		strings.HasPrefix(lower, "mailto:"),
 		strings.HasPrefix(lower, "tel:"),
 		strings.HasPrefix(lower, "javascript:"),
+		strings.HasPrefix(lower, "vbscript:"),
 		strings.HasPrefix(lower, "#"):
 		return true
 	default:
