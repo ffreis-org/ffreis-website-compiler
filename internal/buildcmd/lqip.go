@@ -6,10 +6,10 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	_ "image/png"
+	_ "image/png" // register PNG decoder for image.Decode
 	"strings"
 
-	_ "golang.org/x/image/webp"
+	_ "golang.org/x/image/webp" // register WebP decoder for image.Decode
 )
 
 const lqipThumbSize = 20 // pixels wide

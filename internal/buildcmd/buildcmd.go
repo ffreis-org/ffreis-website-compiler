@@ -32,6 +32,11 @@ const (
 	// defaultJSInlineThreshold is the default byte limit for inlining <script src>
 	// files as <script> blocks. Files at or above this size stay external.
 	defaultJSInlineThreshold = 8 * 1024
+
+	// headEndTag is the closing </head> tag with a preceding newline, used as
+	// the injection point for head-level transforms. Defined as a constant to
+	// avoid duplicate string literals across multiple injection helpers.
+	headEndTag = "\n</head>"
 )
 
 // Package-level regexes — compiled once, shared across all files in this package.
@@ -59,34 +64,22 @@ var (
 	headEndRE = regexp.MustCompile(`(?i)</head>`)
 )
 
+// optionalContent holds the blog posts, projects, and courses loaded from
+// optional input flags, plus the page templates needed to render them.
+type optionalContent struct {
+	posts        []posts.Post
+	projects     []projects.Project
+	courses      []courses.Course
+	postTemplate *sitegen.PageTemplate
+	blogTemplate *sitegen.PageTemplate
+}
+
 func Run(args []string, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
 
-	opts, err := parseBuildOptions(args)
-	if err != nil {
-		return err
-	}
-
-	assetsDir, templatesDir, err := resolveBuildPaths(opts)
-	if err != nil {
-		return err
-	}
-
-	logBuildStart(logger, opts, assetsDir, templatesDir)
-
-	if err := validateBuildDirs(assetsDir, templatesDir); err != nil {
-		return err
-	}
-	if err := ensureOutDir(opts.outDir); err != nil {
-		return err
-	}
-	if err := maybeCopyAssets(opts, assetsDir); err != nil {
-		return err
-	}
-
-	mirrorer, err := maybeInitMirrorer(opts)
+	opts, assetsDir, templatesDir, mirrorer, err := prepareBuild(args, logger)
 	if err != nil {
 		return err
 	}
@@ -101,53 +94,17 @@ func Run(args []string, logger *slog.Logger) error {
 	// a path prefix like "/en".
 	opts.basePath, _ = siteDataResult.Data["base_path"].(string)
 
-	// Load and process blog posts (after contract validation so injected data
-	// doesn't need contract entries; posts data is compiler-managed).
-	var loadedPosts []posts.Post
-	var postTemplate *sitegen.PageTemplate
-	var blogTemplate *sitegen.PageTemplate
-	if opts.postsDir != "" {
-		loadedPosts, err = posts.LoadPostsDir(opts.postsDir)
-		if err != nil {
-			return fmt.Errorf("loading blog posts: %w", err)
-		}
-		if err := posts.CopyPostImages(loadedPosts, opts.outDir); err != nil {
-			return fmt.Errorf("copying post images: %w", err)
-		}
-		injectPostsBlogList(siteDataResult.Data, loadedPosts, opts.itemsPerPage)
-	}
-
-	// Load projects and courses (after contract validation; data is compiler-managed).
-	var loadedProjects []projects.Project
-	if opts.projectsFile != "" {
-		loadedProjects, err = projects.LoadProjectsFile(opts.projectsFile)
-		if err != nil {
-			return fmt.Errorf("loading projects: %w", err)
-		}
-		injectProjectsHomeCarousel(siteDataResult.Data, loadedProjects, opts.itemsPerPage)
-	}
-
-	var loadedCourses []courses.Course
-	if opts.coursesFile != "" {
-		loadedCourses, err = courses.LoadCoursesFile(opts.coursesFile)
-		if err != nil {
-			return fmt.Errorf("loading courses: %w", err)
-		}
-		injectCoursesHomeCarousel(siteDataResult.Data, loadedCourses, opts.itemsPerPage)
+	// Load optional content (posts, projects, courses) and inject into site data.
+	// This runs after contract validation so compiler-managed injected data does
+	// not need contract entries.
+	content, err := loadOptionalContent(opts, siteDataResult.Data)
+	if err != nil {
+		return err
 	}
 
 	// Save references to templates needed for paginated page generation,
 	// before filterInternalPages removes them.
-	for i := range pages {
-		switch pages[i].Name {
-		case "post":
-			tmp := pages[i]
-			postTemplate = &tmp
-		case "blog":
-			tmp := pages[i]
-			blogTemplate = &tmp
-		}
-	}
+	findPaginationTemplates(pages, content)
 
 	// Render all pages (including internal ones) so their CSS/JS assets are
 	// seen as "used" by the asset validator. Internal pages are filtered out
@@ -174,44 +131,9 @@ func Run(args []string, logger *slog.Logger) error {
 		return err
 	}
 
-	// Render individual blog post pages and the RSS feed.
-	var extraSitemapURLs []sitemap.URLItem
-	if postTemplate != nil && len(loadedPosts) > 0 {
-		if err := writePostPages(logger, opts, *postTemplate, loadedPosts, siteDataResult.Data, assetsDir, mirrorer); err != nil {
-			return fmt.Errorf("writing post pages: %w", err)
-		}
-		if err := writeRSSFeed(opts.outDir, siteDataResult.Data, loadedPosts); err != nil {
-			return fmt.Errorf("writing rss feed: %w", err)
-		}
-	}
-
-	// Generate paginated listing pages for blog, projects, and courses.
-	if blogTemplate != nil && len(loadedPosts) > 0 {
-		urls, err := writeBlogPaginatedPages(logger, opts, *blogTemplate, loadedPosts, siteDataResult.Data, assetsDir, mirrorer)
-		if err != nil {
-			return fmt.Errorf("writing blog listing pages: %w", err)
-		}
-		extraSitemapURLs = append(extraSitemapURLs, urls...)
-	}
-	if len(loadedProjects) > 0 {
-		projectTpl := findTemplate(pages, "projects")
-		if projectTpl != nil {
-			urls, err := writeProjectPages(logger, opts, *projectTpl, loadedProjects, siteDataResult.Data, assetsDir, mirrorer)
-			if err != nil {
-				return fmt.Errorf("writing projects pages: %w", err)
-			}
-			extraSitemapURLs = append(extraSitemapURLs, urls...)
-		}
-	}
-	if len(loadedCourses) > 0 {
-		coursesTpl := findTemplate(pages, "courses")
-		if coursesTpl != nil {
-			urls, err := writeCoursePages(logger, opts, *coursesTpl, loadedCourses, siteDataResult.Data, assetsDir, mirrorer)
-			if err != nil {
-				return fmt.Errorf("writing courses pages: %w", err)
-			}
-			extraSitemapURLs = append(extraSitemapURLs, urls...)
-		}
+	extraSitemapURLs, err := writeAllPaginatedContent(logger, opts, pages, content, siteDataResult.Data, assetsDir, mirrorer)
+	if err != nil {
+		return err
 	}
 
 	// Validate that every internal <a href> link in the compiled output points
@@ -233,6 +155,191 @@ func Run(args []string, logger *slog.Logger) error {
 
 	logger.Info("build completed", "out_dir", opts.outDir)
 	return nil
+}
+
+// prepareBuild parses flags, resolves paths, validates directories, and
+// initialises the optional asset mirrorer. Extracted from Run to keep Run's
+// cognitive complexity within the allowed threshold.
+func prepareBuild(args []string, logger *slog.Logger) (opts buildOptions, assetsDir, templatesDir string, mirrorer *externalAssetMirrorer, err error) {
+	opts, err = parseBuildOptions(args)
+	if err != nil {
+		return
+	}
+
+	assetsDir, templatesDir, err = resolveBuildPaths(opts)
+	if err != nil {
+		return
+	}
+
+	logBuildStart(logger, opts, assetsDir, templatesDir)
+
+	if err = validateBuildDirs(assetsDir, templatesDir); err != nil {
+		return
+	}
+	if err = ensureOutDir(opts.outDir); err != nil {
+		return
+	}
+	if err = maybeCopyAssets(opts, assetsDir); err != nil {
+		return
+	}
+
+	mirrorer, err = maybeInitMirrorer(opts)
+	return
+}
+
+// loadOptionalContent loads blog posts, projects, and courses from the paths
+// specified in opts, injecting the data into siteData for template rendering.
+func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalContent, error) {
+	content := &optionalContent{}
+
+	if opts.postsDir != "" {
+		loaded, err := posts.LoadPostsDir(opts.postsDir)
+		if err != nil {
+			return nil, fmt.Errorf("loading blog posts: %w", err)
+		}
+		if err := posts.CopyPostImages(loaded, opts.outDir); err != nil {
+			return nil, fmt.Errorf("copying post images: %w", err)
+		}
+		content.posts = loaded
+		injectPostsBlogList(siteData, loaded, opts.itemsPerPage)
+	}
+
+	if opts.projectsFile != "" {
+		loaded, err := projects.LoadProjectsFile(opts.projectsFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading projects: %w", err)
+		}
+		content.projects = loaded
+		injectProjectsHomeCarousel(siteData, loaded, opts.itemsPerPage)
+	}
+
+	if opts.coursesFile != "" {
+		loaded, err := courses.LoadCoursesFile(opts.coursesFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading courses: %w", err)
+		}
+		content.courses = loaded
+		injectCoursesHomeCarousel(siteData, loaded, opts.itemsPerPage)
+	}
+
+	return content, nil
+}
+
+// findPaginationTemplates records the "post" and "blog" page templates from
+// pages into content so they are available for paginated page generation after
+// filterInternalPages removes them from the slice.
+func findPaginationTemplates(pages []sitegen.PageTemplate, content *optionalContent) {
+	for i := range pages {
+		switch pages[i].Name {
+		case "post":
+			tmp := pages[i]
+			content.postTemplate = &tmp
+		case "blog":
+			tmp := pages[i]
+			content.blogTemplate = &tmp
+		}
+	}
+}
+
+// writeAllPaginatedContent writes individual post pages, the RSS feed, and
+// paginated listing pages for blog, projects, and courses. Returns the extra
+// sitemap URL items produced by the paginated listings.
+func writeAllPaginatedContent(
+	logger *slog.Logger,
+	opts buildOptions,
+	pages []sitegen.PageTemplate,
+	content *optionalContent,
+	siteData map[string]any,
+	assetsDir string,
+	mirrorer *externalAssetMirrorer,
+) ([]sitemap.URLItem, error) {
+	var extraSitemapURLs []sitemap.URLItem
+
+	if err := maybeWritePostContent(logger, opts, content, siteData, assetsDir, mirrorer); err != nil {
+		return nil, err
+	}
+
+	blogURLs, err := maybeWriteBlogListings(logger, opts, content, siteData, assetsDir, mirrorer)
+	if err != nil {
+		return nil, err
+	}
+	extraSitemapURLs = append(extraSitemapURLs, blogURLs...)
+
+	projectURLs, err := maybeWriteProjectListings(logger, opts, pages, content, siteData, assetsDir, mirrorer)
+	if err != nil {
+		return nil, err
+	}
+	extraSitemapURLs = append(extraSitemapURLs, projectURLs...)
+
+	courseURLs, err := maybeWriteCourseListings(logger, opts, pages, content, siteData, assetsDir, mirrorer)
+	if err != nil {
+		return nil, err
+	}
+	extraSitemapURLs = append(extraSitemapURLs, courseURLs...)
+
+	return extraSitemapURLs, nil
+}
+
+// maybeWritePostContent writes individual blog post pages and the RSS feed
+// when a post template and loaded posts are available.
+func maybeWritePostContent(logger *slog.Logger, opts buildOptions, content *optionalContent, siteData map[string]any, assetsDir string, mirrorer *externalAssetMirrorer) error {
+	if content.postTemplate == nil || len(content.posts) == 0 {
+		return nil
+	}
+	if err := writePostPages(logger, opts, *content.postTemplate, content.posts, siteData, assetsDir, mirrorer); err != nil {
+		return fmt.Errorf("writing post pages: %w", err)
+	}
+	if err := writeRSSFeed(opts.outDir, siteData, content.posts); err != nil {
+		return fmt.Errorf("writing rss feed: %w", err)
+	}
+	return nil
+}
+
+// maybeWriteBlogListings generates paginated /blog/ listing pages when a blog
+// template and loaded posts are available.
+func maybeWriteBlogListings(logger *slog.Logger, opts buildOptions, content *optionalContent, siteData map[string]any, assetsDir string, mirrorer *externalAssetMirrorer) ([]sitemap.URLItem, error) {
+	if content.blogTemplate == nil || len(content.posts) == 0 {
+		return nil, nil
+	}
+	urls, err := writeBlogPaginatedPages(logger, opts, *content.blogTemplate, content.posts, siteData, assetsDir, mirrorer)
+	if err != nil {
+		return nil, fmt.Errorf("writing blog listing pages: %w", err)
+	}
+	return urls, nil
+}
+
+// maybeWriteProjectListings generates paginated /projects/ listing pages when
+// projects were loaded and a projects page template exists.
+func maybeWriteProjectListings(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, content *optionalContent, siteData map[string]any, assetsDir string, mirrorer *externalAssetMirrorer) ([]sitemap.URLItem, error) {
+	if len(content.projects) == 0 {
+		return nil, nil
+	}
+	tpl := findTemplate(pages, "projects")
+	if tpl == nil {
+		return nil, nil
+	}
+	urls, err := writeProjectPages(logger, opts, *tpl, content.projects, siteData, assetsDir, mirrorer)
+	if err != nil {
+		return nil, fmt.Errorf("writing projects pages: %w", err)
+	}
+	return urls, nil
+}
+
+// maybeWriteCourseListings generates paginated /courses/ listing pages when
+// courses were loaded and a courses page template exists.
+func maybeWriteCourseListings(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, content *optionalContent, siteData map[string]any, assetsDir string, mirrorer *externalAssetMirrorer) ([]sitemap.URLItem, error) {
+	if len(content.courses) == 0 {
+		return nil, nil
+	}
+	tpl := findTemplate(pages, "courses")
+	if tpl == nil {
+		return nil, nil
+	}
+	urls, err := writeCoursePages(logger, opts, *tpl, content.courses, siteData, assetsDir, mirrorer)
+	if err != nil {
+		return nil, fmt.Errorf("writing courses pages: %w", err)
+	}
+	return urls, nil
 }
 
 func writePages(logger *slog.Logger, opts buildOptions, pages []sitegen.PageTemplate, assetsDir string, siteData map[string]any, renderedPages map[string]string, mirrorer *externalAssetMirrorer) error {
