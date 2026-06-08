@@ -41,4 +41,6 @@ scripts/bootstrap_lefthook.sh
 /website-compiler
 /build-static
 /website-compiler-new
+
+# Static analysis / scanner artifacts
 .scannerwork/

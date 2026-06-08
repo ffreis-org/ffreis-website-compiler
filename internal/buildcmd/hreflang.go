@@ -42,34 +42,65 @@ func injectHreflangAlternates(html string, siteData map[string]any, pageName str
 
 	var links strings.Builder
 	for _, v := range variants {
-		var slug string
-		if v.hreflang == htmlLang {
-			slug = currentSlug
-		} else {
-			slug = resolveSlugForLang(slugMaps, v.hreflang, pageName)
-		}
+		slug := variantSlug(v.hreflang, htmlLang, currentSlug, slugMaps, pageName)
 		fmt.Fprintf(&links, `<link rel="alternate" hreflang="%s" href="%s">`,
 			v.hreflang, buildAlternateURL(baseURL, v.path, slug, cleanURLs))
 		links.WriteByte('\n')
 	}
 	if defaultHreflang != "" {
-		for _, v := range variants {
-			if v.hreflang == defaultHreflang {
-				var slug string
-				if v.hreflang == htmlLang {
-					slug = currentSlug
-				} else {
-					slug = resolveSlugForLang(slugMaps, v.hreflang, pageName)
-				}
-				fmt.Fprintf(&links, `<link rel="alternate" hreflang="x-default" href="%s">`,
-					buildAlternateURL(baseURL, v.path, slug, cleanURLs))
-				links.WriteByte('\n')
-				break
-			}
-		}
+		appendXDefaultLink(xDefaultLinkContext{
+			sb:              &links,
+			variants:        variants,
+			defaultHreflang: defaultHreflang,
+			htmlLang:        htmlLang,
+			currentSlug:     currentSlug,
+			slugMaps:        slugMaps,
+			pageName:        pageName,
+			baseURL:         baseURL,
+			cleanURLs:       cleanURLs,
+		})
 	}
 
 	return strings.Replace(html, "</head>", links.String()+"</head>", 1)
+}
+
+// variantSlug returns the page slug for the given hreflang. When the variant
+// is the current page language it returns the already-resolved currentSlug;
+// otherwise it looks up the slug in the slug maps.
+func variantSlug(hreflang, htmlLang, currentSlug string, slugMaps map[string]map[string]string, pageName string) string {
+	if hreflang == htmlLang {
+		return currentSlug
+	}
+	return resolveSlugForLang(slugMaps, hreflang, pageName)
+}
+
+// xDefaultLinkContext carries the context needed to emit an x-default hreflang
+// link, replacing a parameter list that would otherwise exceed the max allowed.
+type xDefaultLinkContext struct {
+	sb              *strings.Builder
+	variants        []langVariant
+	defaultHreflang string
+	htmlLang        string
+	currentSlug     string
+	slugMaps        map[string]map[string]string
+	pageName        string
+	baseURL         string
+	cleanURLs       bool
+}
+
+// appendXDefaultLink writes an x-default hreflang link to ctx.sb for the
+// default language variant, if one exists in ctx.variants.
+func appendXDefaultLink(ctx xDefaultLinkContext) {
+	for _, v := range ctx.variants {
+		if v.hreflang != ctx.defaultHreflang {
+			continue
+		}
+		slug := variantSlug(v.hreflang, ctx.htmlLang, ctx.currentSlug, ctx.slugMaps, ctx.pageName)
+		fmt.Fprintf(ctx.sb, `<link rel="alternate" hreflang="x-default" href="%s">`,
+			buildAlternateURL(ctx.baseURL, v.path, slug, ctx.cleanURLs))
+		ctx.sb.WriteByte('\n')
+		break
+	}
 }
 
 // injectLangSwitcherHrefs replaces the static root href on each non-active

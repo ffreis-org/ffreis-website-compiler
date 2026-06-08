@@ -13,6 +13,19 @@ import (
 	"ffreis-website-compiler/internal/sitemap"
 )
 
+// paginatedPagesParams bundles the arguments for writePaginatedPages to keep
+// the function signature within the allowed parameter count.
+type paginatedPagesParams struct {
+	logger      *slog.Logger
+	opts        buildOptions
+	tmpl        sitegen.PageTemplate
+	items       []any
+	sectionName string
+	siteData    map[string]any
+	assetsDir   string
+	mirrorer    *externalAssetMirrorer
+}
+
 // writePaginatedPages generates page 1 at /<sectionName>/index.html and
 // subsequent pages at /<sectionName>/page/N/index.html.
 //
@@ -20,16 +33,16 @@ import (
 // projects.ToSiteDataList, courses.ToSiteDataList, or postToMap).
 //
 // It returns the sitemap URL entries for all generated pages.
-func writePaginatedPages(
-	logger *slog.Logger,
-	opts buildOptions,
-	tmpl sitegen.PageTemplate,
-	items []any,
-	sectionName string,
-	siteData map[string]any,
-	assetsDir string,
-	mirrorer *externalAssetMirrorer,
-) ([]sitemap.URLItem, error) {
+func writePaginatedPages(p paginatedPagesParams) ([]sitemap.URLItem, error) {
+	logger := p.logger
+	opts := p.opts
+	tmpl := p.tmpl
+	items := p.items
+	sectionName := p.sectionName
+	siteData := p.siteData
+	assetsDir := p.assetsDir
+	mirrorer := p.mirrorer
+
 	basePath := "/" + sectionName
 	pages := pagination.Paginate(items, opts.itemsPerPage, basePath)
 	allToCopy := make(map[string]string)
