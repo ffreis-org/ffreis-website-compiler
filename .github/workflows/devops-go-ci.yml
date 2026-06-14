@@ -23,48 +23,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  mod-tidy:
+  quick-checks:
     permissions:
       contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-mod-tidy-check.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
-    with:
-      go-version: "1.25.8"
-      working-directory: "."
-
-  fmt:
-    permissions:
-      contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fmt.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
-    with:
-      go-version: "1.25.8"
-      working-directory: "."
-
-  lint:
-    needs: [fmt]
-    permissions:
-      contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-lint.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
+      pull-requests: read # for golangci-lint-action
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-quick-checks.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
     with:
       go-version: "1.25.8"
       working-directory: "."
 
   test:
-    if: ${{ !github.event.pull_request.draft }}
-    needs: [fmt]
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    needs: [quick-checks]
     permissions:
       contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
     with:
       go-version: "1.25.8"
       working-directory: "."
       run-govulncheck: false
 
   integration:
-    if: ${{ !github.event.pull_request.draft }}
-    needs: [fmt]
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    needs: [quick-checks]
     permissions:
       contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
     with:
       go-version: "1.25.8"
       working-directory: "."
