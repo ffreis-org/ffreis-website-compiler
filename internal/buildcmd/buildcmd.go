@@ -67,10 +67,10 @@ var (
 	baseHrefTagRE = regexp.MustCompile(`(?is)<base\s+[^>]*href=["']([^"']+)["'][^>]*>`)
 
 	// Regexes for validateRenderedPageStructure.
-	titleTagRE       = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
-	h1TagRE          = regexp.MustCompile(`(?is)<h1[^>]*>(.*?)</h1>`)
+	titleTagRE        = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+	h1TagRE           = regexp.MustCompile(`(?is)<h1[^>]*>(.*?)</h1>`)
 	metaDescriptionRE = regexp.MustCompile(`(?is)<meta\s+[^>]*name=["']description["'][^>]*content=["']([^"']*)["'][^>]*>|<meta\s+[^>]*content=["']([^"']*)["'][^>]*name=["']description["'][^>]*>`)
-	htmlTagsRE       = regexp.MustCompile(`<[^>]+>`)
+	htmlTagsRE        = regexp.MustCompile(`<[^>]+>`)
 )
 
 // optionalContent holds the blog posts, projects, and courses loaded from
