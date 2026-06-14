@@ -1,0 +1,39 @@
+ui:
+  nav:
+    skip_link: "skip-pt"
+    logo_aria: "home-pt"
+    nav_aria: "nav-pt"
+    recommendations: "Recommendations-pt"
+    contact: "Contact-pt"
+    donate: "Support-pt"
+    donate_url: "https://buymeacoffee.com/petlook"
+    lang_links:
+      - lang: "en"
+        label: "English"
+        flag: "EN"
+        href: "/en/"
+        active: false
+      - lang: "pt-BR"
+        label: "Portugues"
+        flag: "PT"
+        href: "/pt/"
+        active: true
+  generator:
+    headline: "headline-pt"
+    subtext: "subtext-pt"
+    url_label: "url_label-pt"
+    url_placeholder: "ph-pt"
+    photo_label: "photo-pt"
+    cta: "cta-pt"
+    generating_label: "gen-pt"
+    loading_stages: ["s1-pt", "s2-pt"]
+    result_download: "save-pt"
+    result_retry: "retry-pt"
+    convert_16bit_cta: "16bit-pt"
+    result_products_heading: "products-pt"
+    disclosure_inline: "disclosure-pt"
+    disclosure_items: ["d1-pt", "d2-pt"]
+  errors:
+    url_required: "need-url-pt"
+    photo_required: "need-photo-pt"
+    generic: "oops-pt"

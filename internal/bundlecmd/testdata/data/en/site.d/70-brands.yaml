@@ -1,0 +1,30 @@
+brands:
+  section_title: "Brands-en"
+  partner_cta: "Partner-en"
+  items:
+    - brand_id: b1
+      brand_name: "Alpha"
+      brand_url: "https://alpha.example"
+      logo_s3_uri: "brands/alpha.png"
+      description: "Alpha-en"
+      placement_type: organic
+      disclosure_label: "like-en"
+      priority: 20
+      active: true
+    - brand_id: b2
+      brand_name: "Beta"
+      brand_url: "https://beta.example"
+      logo_s3_uri: "brands/beta.png"
+      description: "Beta-en"
+      placement_type: community_favorite
+      disclosure_label: "popular-en"
+      priority: 10
+      active: true
+    - brand_id: b3
+      brand_name: "Hidden"
+      brand_url: "https://hidden.example"
+      logo_s3_uri: "brands/hidden.png"
+      description: "hidden-en"
+      placement_type: organic
+      priority: 5
+      active: false

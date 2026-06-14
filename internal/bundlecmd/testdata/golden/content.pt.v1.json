@@ -1,0 +1,98 @@
+{
+  "brands": {
+    "items": [
+      {
+        "brand_id": "b2",
+        "brand_name": "Beta",
+        "brand_url": "https://beta.example",
+        "description": "Beta-pt",
+        "disclosure_label": "popular-pt",
+        "logo_url": "https://petlook.app/assets/brands/beta.png",
+        "placement_type": "community_favorite",
+        "priority": 10
+      },
+      {
+        "brand_id": "b1",
+        "brand_name": "Alpha",
+        "brand_url": "https://alpha.example",
+        "description": "Alpha-pt",
+        "disclosure_label": "like-pt",
+        "logo_url": "https://petlook.app/assets/brands/alpha.png",
+        "placement_type": "organic",
+        "priority": 20
+      }
+    ],
+    "partner_cta": "Partner-pt",
+    "section_title": "Brands-pt"
+  },
+  "content_hash": "c36069b83b7d78821afd8272024967abe43b19f50a4ee7c53d2206ff6f6068e6",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "html_lang": "pt-BR",
+  "lang": "pt",
+  "recommendations": [
+    {
+      "id": "r1",
+      "image_url": "",
+      "name": "Test Harness",
+      "price": "",
+      "store": "Amazon",
+      "url": "https://example.com/harness"
+    }
+  ],
+  "schema_version": 1,
+  "source_sha": "testsha",
+  "ui": {
+    "errors": {
+      "generic": "oops-pt",
+      "photo_required": "need-photo-pt",
+      "url_required": "need-url-pt"
+    },
+    "generator": {
+      "convert_16bit_cta": "16bit-pt",
+      "cta": "cta-pt",
+      "disclosure_inline": "disclosure-pt",
+      "disclosure_items": [
+        "d1-pt",
+        "d2-pt"
+      ],
+      "generating_label": "gen-pt",
+      "headline": "headline-pt",
+      "loading_stages": [
+        "s1-pt",
+        "s2-pt"
+      ],
+      "photo_label": "photo-pt",
+      "result_download": "save-pt",
+      "result_products_heading": "products-pt",
+      "result_retry": "retry-pt",
+      "subtext": "subtext-pt",
+      "url_label": "url_label-pt",
+      "url_placeholder": "ph-pt"
+    },
+    "nav": {
+      "contact": "Contact-pt",
+      "donate": "Support-pt",
+      "donate_url": "https://buymeacoffee.com/petlook",
+      "lang_links": [
+        {
+          "active": false,
+          "flag": "EN",
+          "href": "/en/",
+          "label": "English",
+          "lang": "en"
+        },
+        {
+          "active": true,
+          "flag": "PT",
+          "href": "/pt/",
+          "label": "Portugues",
+          "lang": "pt-BR"
+        }
+      ],
+      "logo_aria": "home-pt",
+      "nav_aria": "nav-pt",
+      "recommendations": "Recommendations-pt",
+      "skip_link": "skip-pt"
+    }
+  }
+}

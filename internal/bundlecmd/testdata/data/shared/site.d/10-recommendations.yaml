@@ -1,0 +1,7 @@
+recommendations:
+  - id: r1
+    store: Amazon
+    name: Test Harness
+    url: "https://example.com/harness"
+    image_url: ""
+    price: ""

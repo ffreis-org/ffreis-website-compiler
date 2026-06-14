@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-01-01T00:00:00Z",
+  "langs": {
+    "en": {
+      "content_hash": "4057ae52062398a7827fb4d1620dab35d15fba54832bb87f2e7d7980a43837a5",
+      "path": "content.en.v1.json"
+    },
+    "pt": {
+      "content_hash": "c36069b83b7d78821afd8272024967abe43b19f50a4ee7c53d2206ff6f6068e6",
+      "path": "content.pt.v1.json"
+    }
+  },
+  "schema_version": 1
+}
