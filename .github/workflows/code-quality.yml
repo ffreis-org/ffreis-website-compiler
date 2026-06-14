@@ -1,0 +1,30 @@
+name: Code Quality (SonarCloud)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'sonar-project.properties'
+      - '.github/workflows/code-quality.yml'
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  sonar:
+    permissions:
+      contents: read
+    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-sonar.yml@e7e2b4fefe6b8e2ad2842025c0d5b6e856ff813d
+    with:
+      go-version: "1.25"
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

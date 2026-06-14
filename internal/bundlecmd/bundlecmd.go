@@ -229,6 +229,23 @@ func projectRecommendations(v any) []any {
 	return out
 }
 
+// scan-fix(sonar:S3776): extracted from projectBrands to reduce cognitive complexity from 16 to ≤15
+func buildBrandRow(m map[string]any, cdnBase string) map[string]any {
+	row := map[string]any{}
+	for _, k := range brandKeys {
+		if k == "logo_url" {
+			continue
+		}
+		if v, ok := m[k]; ok {
+			row[k] = v
+		}
+	}
+	if s3, ok := m["logo_s3_uri"].(string); ok && s3 != "" {
+		row["logo_url"] = cdnBase + "/assets/" + s3
+	}
+	return row
+}
+
 // projectBrands keeps only active brands, sorts by priority asc, and rewrites logo_s3_uri → absolute CDN URL.
 func projectBrands(src map[string]any, cdnBase string) map[string]any {
 	out := map[string]any{
@@ -246,19 +263,7 @@ func projectBrands(src map[string]any, cdnBase string) map[string]any {
 		if active, ok := m["active"].(bool); ok && !active {
 			continue
 		}
-		row := map[string]any{}
-		for _, k := range brandKeys {
-			if k == "logo_url" {
-				continue
-			}
-			if v, ok := m[k]; ok {
-				row[k] = v
-			}
-		}
-		if s3, ok := m["logo_s3_uri"].(string); ok && s3 != "" {
-			row["logo_url"] = cdnBase + "/assets/" + s3
-		}
-		rows = append(rows, kv{prio: intOrZero(m["priority"]), row: row})
+		rows = append(rows, kv{prio: intOrZero(m["priority"]), row: buildBrandRow(m, cdnBase)})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].prio < rows[j].prio })
 	items := make([]any, 0, len(rows))
