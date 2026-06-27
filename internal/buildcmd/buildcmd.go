@@ -295,6 +295,7 @@ func maybeWritePostContent(logger *slog.Logger, opts buildOptions, content *opti
 	if content.postTemplate == nil || len(content.posts) == 0 {
 		return nil
 	}
+	WarnUnknownLangs(logger, content.posts, siteData)
 	if err := writePostPages(logger, opts, *content.postTemplate, content.posts, siteData, assetsDir, mirrorer); err != nil {
 		return fmt.Errorf("writing post pages: %w", err)
 	}

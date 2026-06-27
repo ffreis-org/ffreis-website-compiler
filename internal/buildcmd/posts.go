@@ -114,10 +114,19 @@ func writePostPages(logger *slog.Logger, opts buildOptions, postTpl sitegen.Page
 // writePostLangStub writes a redirect stub for a post not available in currentLang.
 func writePostLangStub(logger *slog.Logger, opts buildOptions, post posts.Post, siteData map[string]any, currentLang string) error {
 	target := redirectTarget(currentLang, post.Meta.AvailableLanguages, siteData)
+	var targetURL string
 	if target == "" {
-		return nil
+		// No usable redirect target — fall back to the current-language home so
+		// the visitor lands somewhere sensible instead of a CloudFront error page.
+		logger.Warn("no redirect target for post; falling back to language home",
+			"slug", post.Meta.Slug,
+			"lang", currentLang,
+			"available", post.Meta.AvailableLanguages,
+		)
+		targetURL = "/" + currentLang + "/"
+	} else {
+		targetURL = "/" + target + "/blog/" + post.Meta.Slug + "/"
 	}
-	targetURL := "/" + target + "/blog/" + post.Meta.Slug + "/"
 	stubDir := filepath.Join(opts.outDir, "blog", post.Meta.Slug)
 	if err := writeRedirectStub(stubDir, targetURL); err != nil {
 		return fmt.Errorf("writing redirect stub for post %s: %w", post.Meta.Slug, err)

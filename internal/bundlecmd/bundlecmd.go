@@ -229,7 +229,7 @@ func projectRecommendations(v any) []any {
 	return out
 }
 
-// scan-fix(sonar:S3776): extracted from projectBrands to reduce cognitive complexity from 16 to ≤15
+// scan-fix(sonar:S3776): extracted from projectBrands to reduce cognitive complexity from 16 to ≤15.
 func buildBrandRow(m map[string]any, cdnBase string) map[string]any {
 	row := map[string]any{}
 	for _, k := range brandKeys {
