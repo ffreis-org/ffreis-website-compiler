@@ -1,6 +1,7 @@
 package buildcmd
 
 import (
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -62,25 +63,31 @@ func toLangsAny(langs []string) []any {
 	return out
 }
 
-// WarnUnknownLangs logs a warning for any post whose available_languages
-// contains a code not found in the site's configured language_variants.
-// This catches typos like "br" when the deployment uses "pt".
-func WarnUnknownLangs(logger *slog.Logger, postList []posts.Post, siteData map[string]any) {
+// ValidatePostLangs returns an error if any post declares an available_languages
+// code that is not configured in the site's language_variants. A post declaring
+// an unsupported language would produce an unreachable route in the built site.
+func ValidatePostLangs(logger *slog.Logger, postList []posts.Post, siteData map[string]any) error {
 	known := knownLangPrefixes(siteData)
 	if len(known) == 0 {
-		return
+		return nil
 	}
+	var unknown []string
 	for _, p := range postList {
 		for _, lang := range p.Meta.AvailableLanguages {
 			if !slices.Contains(known, lang) {
-				logger.Warn("post available_languages contains unknown language code",
+				logger.Error("post available_languages contains unsupported language code",
 					"slug", p.Meta.Slug,
-					"unknown_lang", lang,
-					"known_langs", known,
+					"unsupported_lang", lang,
+					"supported_langs", known,
 				)
+				unknown = append(unknown, fmt.Sprintf("%s:%s", p.Meta.Slug, lang))
 			}
 		}
 	}
+	if len(unknown) > 0 {
+		return fmt.Errorf("posts reference unsupported language codes (add them to language_variants or remove from posts): %v", unknown)
+	}
+	return nil
 }
 
 // knownLangPrefixes extracts the URL prefix codes (e.g. "en", "pt") from
