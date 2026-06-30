@@ -33,18 +33,23 @@ func isAvailable(available []string, lang string) bool {
 
 // redirectTarget returns the URL prefix to redirect to when content is not
 // available in currentLang. Priority: site default → "en" → first available.
-// Returns "" if available is empty (should not happen when called after isAvailable).
+// Only *rendered* languages (those the site actually builds pages for) are
+// eligible targets — an item available only in content-only languages (e.g.
+// "de", "ja") has no rendered route to redirect to, so this returns "" and the
+// caller falls back to the language home. Returns "" if available is empty
+// (should not happen when called after isAvailable).
 func redirectTarget(currentLang string, available []string, siteData map[string]any) string {
+	rendered := renderedLangPrefixes(siteData)
 	siteDefault, _ := siteData["language_default"].(string)
 
 	candidates := []string{siteDefault, "en"}
 	for _, c := range candidates {
-		if c != "" && c != currentLang && isAvailable(available, c) {
+		if c != "" && c != currentLang && slices.Contains(rendered, c) && isAvailable(available, c) {
 			return c
 		}
 	}
 	for _, l := range available {
-		if l != currentLang {
+		if l != currentLang && slices.Contains(rendered, l) {
 			return l
 		}
 	}
@@ -64,35 +69,39 @@ func toLangsAny(langs []string) []any {
 }
 
 // ValidatePostLangs returns an error if any post declares an available_languages
-// code that is not configured in the site's language_variants. A post declaring
-// an unsupported language would produce an unreachable route in the built site.
+// code that is not part of the site's content-language set (the rendered
+// languages plus any extra content_languages it carries, e.g. "de"/"ja"). A
+// code outside that set — a typo like "br" instead of "pt" — would produce an
+// unreachable route in the built site, so it is caught at build time. Codes that
+// are content-only (carried but not rendered) are allowed: the item simply has
+// no rendered page and falls back via the redirect-stub path.
 func ValidatePostLangs(logger *slog.Logger, postList []posts.Post, siteData map[string]any) error {
-	known := knownLangPrefixes(siteData)
-	if len(known) == 0 {
+	allowed := allowedContentLangs(siteData)
+	if len(allowed) == 0 {
 		return nil
 	}
 	var unknown []string
 	for _, p := range postList {
 		for _, lang := range p.Meta.AvailableLanguages {
-			if !slices.Contains(known, lang) {
+			if !slices.Contains(allowed, lang) {
 				logger.Error("post available_languages contains unsupported language code",
 					"slug", p.Meta.Slug,
 					"unsupported_lang", lang,
-					"supported_langs", known,
+					"allowed_langs", allowed,
 				)
 				unknown = append(unknown, fmt.Sprintf("%s:%s", p.Meta.Slug, lang))
 			}
 		}
 	}
 	if len(unknown) > 0 {
-		return fmt.Errorf("posts reference unsupported language codes (add them to language_variants or remove from posts): %v", unknown)
+		return fmt.Errorf("posts reference unsupported language codes (add them to content_languages/language_variants or fix the typo): %v", unknown)
 	}
 	return nil
 }
 
-// knownLangPrefixes extracts the URL prefix codes (e.g. "en", "pt") from
-// language_variants in siteData.
-func knownLangPrefixes(siteData map[string]any) []string {
+// renderedLangPrefixes extracts the URL prefix codes the site actually builds
+// pages for (e.g. "en", "pt"), from language_variants in siteData.
+func renderedLangPrefixes(siteData map[string]any) []string {
 	variants, _ := siteData["language_variants"].([]any)
 	out := make([]string, 0, len(variants))
 	for _, v := range variants {
@@ -104,4 +113,21 @@ func knownLangPrefixes(siteData map[string]any) []string {
 		}
 	}
 	return out
+}
+
+// allowedContentLangs returns the set of language codes a content item may
+// legitimately declare in available_languages: the content-language superset of
+// the rendered languages plus any extra content_languages the site carries but
+// does not itself render (e.g. "de", "ja"). Falls back to the rendered set when
+// content_languages is absent, preserving the stricter prior behaviour.
+func allowedContentLangs(siteData map[string]any) []string {
+	allowed := renderedLangPrefixes(siteData)
+	extra, _ := siteData["content_languages"].([]any)
+	for _, e := range extra {
+		code, ok := e.(string)
+		if ok && code != "" && !slices.Contains(allowed, code) {
+			allowed = append(allowed, code)
+		}
+	}
+	return allowed
 }
