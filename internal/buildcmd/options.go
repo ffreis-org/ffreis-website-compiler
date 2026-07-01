@@ -21,6 +21,10 @@ type buildOptions struct {
 	postsDir                string
 	projectsFile            string
 	coursesFile             string
+	// contentSource is "prod" (default) or "mock". When "prod", the build fails
+	// if any content path contains /mock/ — prevents mock data reaching prod by
+	// accident. Set to "mock" explicitly to opt in to dev content.
+	contentSource           string
 	itemsPerPage            int
 	copyAssets              bool
 	inlineAssets            bool
@@ -84,6 +88,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.postsDir, "posts-dir", "", "path to blog posts directory (posts/<slug>/index.md layout); enables Markdown blog post generation and RSS feed when set")
 	fs.StringVar(&opts.projectsFile, "projects-file", "", "path to projects.yaml (ffreis-projects repo); enables /projects/ paginated page generation when set")
 	fs.StringVar(&opts.coursesFile, "courses-file", "", "path to courses.yaml (ffreis-courses repo); enables /courses/ paginated page generation when set")
+	fs.StringVar(&opts.contentSource, "content-source", "prod", `content source: "prod" (default) or "mock". When "prod", any content path containing /mock/ is a fatal error so mock data cannot reach production by accident.`)
 	fs.IntVar(&opts.itemsPerPage, "items-per-page", 12, "number of items per paginated page for projects, courses, and blog")
 
 	fs.BoolVar(&opts.trackerEnabled, "tracker-enabled", false, "inject the ffreis-tracker-sdk script tag + Tracker.init(...) before </head>; requires -tracker-sdk-version, -tracker-site-id, -tracker-endpoint")
@@ -94,6 +99,21 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 
 	if err := fs.Parse(args); err != nil {
 		return buildOptions{}, err
+	}
+
+	// Anti-leak guard: reject /mock/ paths when content-source is prod (the default).
+	// This makes it impossible to bake mock content into a prod build by accident.
+	if opts.contentSource != "mock" {
+		for _, p := range []string{opts.postsDir, opts.projectsFile, opts.coursesFile} {
+			if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
+				return buildOptions{}, fmt.Errorf(
+					"content path %q contains /mock/ but --content-source=%q: "+
+						"mock content cannot be used in a prod build; "+
+						"pass --content-source=mock to enable mock content",
+					p, opts.contentSource,
+				)
+			}
+		}
 	}
 
 	if assetsDirFlag == "" && siteDirFlag != "" {
