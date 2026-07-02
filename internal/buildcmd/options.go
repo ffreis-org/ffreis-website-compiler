@@ -11,16 +11,20 @@ import (
 )
 
 type buildOptions struct {
-	websiteRoot             string
-	assetsDir               string
-	templatesDir            string
-	sitemapConfig           string
-	sitemapBaseURL          string
-	siteDataSource          string
-	outDir                  string
-	postsDir                string
-	projectsFile            string
-	coursesFile             string
+	websiteRoot    string
+	assetsDir      string
+	templatesDir   string
+	sitemapConfig  string
+	sitemapBaseURL string
+	siteDataSource string
+	outDir         string
+	postsDir       string
+	projectsFile   string
+	coursesFile    string
+	// contentSource is "prod" (default) or "mock". When "prod", the build fails
+	// if any content path contains /mock/ — prevents mock data reaching prod by
+	// accident. Set to "mock" explicitly to opt in to dev content.
+	contentSource           string
 	itemsPerPage            int
 	copyAssets              bool
 	inlineAssets            bool
@@ -49,6 +53,12 @@ type buildOptions struct {
 	trackerSiteID     string
 	trackerEndpoint   string
 	trackerCDNBase    string // override (mostly for tests); empty uses cdn.ffreis.com
+	// devData enables injection of window.__devBuild before </head> on every
+	// rendered page. devDataJSON holds the pre-serialised JSON payload built from
+	// siteData + content after loading; it is populated by buildDevDataPayload and
+	// stored here so transformPage can inject it without re-reading siteData.
+	devData     bool
+	devDataJSON string
 }
 
 func parseBuildOptions(args []string) (buildOptions, error) {
@@ -84,6 +94,7 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.postsDir, "posts-dir", "", "path to blog posts directory (posts/<slug>/index.md layout); enables Markdown blog post generation and RSS feed when set")
 	fs.StringVar(&opts.projectsFile, "projects-file", "", "path to projects.yaml (ffreis-projects repo); enables /projects/ paginated page generation when set")
 	fs.StringVar(&opts.coursesFile, "courses-file", "", "path to courses.yaml (ffreis-courses repo); enables /courses/ paginated page generation when set")
+	fs.StringVar(&opts.contentSource, "content-source", "prod", `content source: "prod" (default) or "mock". When "prod", any content path containing /mock/ is a fatal error so mock data cannot reach production by accident.`)
 	fs.IntVar(&opts.itemsPerPage, "items-per-page", 12, "number of items per paginated page for projects, courses, and blog")
 
 	fs.BoolVar(&opts.trackerEnabled, "tracker-enabled", false, "inject the ffreis-tracker-sdk script tag + Tracker.init(...) before </head>; requires -tracker-sdk-version, -tracker-site-id, -tracker-endpoint")
@@ -91,9 +102,25 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.StringVar(&opts.trackerSiteID, "tracker-site-id", "", "site identifier passed to Tracker.init (e.g. flemming, ffreis, petlook)")
 	fs.StringVar(&opts.trackerEndpoint, "tracker-endpoint", "", "ingestion endpoint passed to Tracker.init (e.g. https://events.flemming.com.br)")
 	fs.StringVar(&opts.trackerCDNBase, "tracker-cdn-base", "", "override the CDN base URL for the SDK script (defaults to https://cdn.ffreis.com)")
+	fs.BoolVar(&opts.devData, "dev-data", false, "inject window.__devBuild JSON before </head> on every page; for dev.ffreis.com only — never pass on prod builds")
 
 	if err := fs.Parse(args); err != nil {
 		return buildOptions{}, err
+	}
+
+	// Anti-leak guard: reject /mock/ paths when content-source is prod (the default).
+	// This makes it impossible to bake mock content into a prod build by accident.
+	if opts.contentSource != "mock" {
+		for _, p := range []string{opts.postsDir, opts.projectsFile, opts.coursesFile} {
+			if strings.Contains(p, "/mock/") || strings.HasSuffix(p, "/mock") {
+				return buildOptions{}, fmt.Errorf(
+					"content path %q contains /mock/ but --content-source=%q: "+
+						"mock content cannot be used in a prod build; "+
+						"pass --content-source=mock to enable mock content",
+					p, opts.contentSource,
+				)
+			}
+		}
 	}
 
 	if assetsDirFlag == "" && siteDirFlag != "" {

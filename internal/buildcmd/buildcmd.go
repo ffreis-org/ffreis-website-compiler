@@ -1,6 +1,7 @@
 package buildcmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -110,6 +111,10 @@ func Run(args []string, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+
+	// Build dev-data JSON payload once from siteData + content so transformPage
+	// can inject it without accessing siteData directly.
+	opts.devDataJSON = buildDevDataPayload(opts, siteDataResult.Data, content)
 
 	// Save references to templates needed for paginated page generation,
 	// before filterInternalPages removes them.
@@ -630,4 +635,64 @@ func collectSharedScripts(renderedPages map[string]string) map[string]bool {
 		}
 	}
 	return shared
+}
+
+// devBuildPayload is the shape of window.__devBuild injected by -dev-data.
+type devBuildPayload struct {
+	ContentSource string         `json:"contentSource"`
+	ContentLangs  []string       `json:"contentLangs"`
+	Posts         []devItemEntry `json:"posts"`
+	Courses       []devItemEntry `json:"courses"`
+	Projects      []devItemEntry `json:"projects"`
+}
+
+// devItemEntry carries the title/slug and declared language codes for one
+// content item so the dev panel's dynamic tab can filter without a rebuild.
+type devItemEntry struct {
+	ID    string   `json:"id"`    // slug for posts, title for courses/projects
+	Langs []string `json:"langs"` // nil → available in all content languages
+}
+
+// buildDevDataPayload serialises the current build's content-source metadata
+// and per-item language declarations into a JSON string for window.__devBuild.
+// Returns "" when -dev-data is not set.
+func buildDevDataPayload(opts buildOptions, siteData map[string]any, content *optionalContent) string {
+	if !opts.devData {
+		return ""
+	}
+
+	// Read content_languages from siteData (set by Phase 4).
+	var contentLangs []string
+	if cl, ok := siteData["content_languages"].([]any); ok {
+		for _, v := range cl {
+			if s, ok := v.(string); ok {
+				contentLangs = append(contentLangs, s)
+			}
+		}
+	}
+
+	payload := devBuildPayload{
+		ContentSource: opts.contentSource,
+		ContentLangs:  contentLangs,
+		Posts:         make([]devItemEntry, 0, len(content.posts)),
+		Courses:       make([]devItemEntry, 0, len(content.courses)),
+		Projects:      make([]devItemEntry, 0, len(content.projects)),
+	}
+
+	for _, p := range content.posts {
+		payload.Posts = append(payload.Posts, devItemEntry{ID: p.Meta.Slug, Langs: p.Meta.AvailableLanguages})
+	}
+	for _, c := range content.courses {
+		payload.Courses = append(payload.Courses, devItemEntry{ID: c.Title, Langs: c.SupportedLanguages})
+	}
+	for _, p := range content.projects {
+		payload.Projects = append(payload.Projects, devItemEntry{ID: p.Title, Langs: nil})
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		// json.Marshal cannot fail for these types; return empty to skip injection.
+		return ""
+	}
+	return string(b)
 }

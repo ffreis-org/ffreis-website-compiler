@@ -62,9 +62,22 @@ func jsonQuote(s string) string {
 	return string(b)
 }
 
+// injectDevData injects window.__devBuild = <JSON> before </head> when the
+// -dev-data flag is set. opts.devDataJSON must be pre-populated by
+// buildDevDataPayload before any pages are rendered; this function is a
+// no-op when devDataJSON is empty.
+func injectDevData(html string, opts buildOptions) string {
+	if opts.devDataJSON == "" {
+		return html
+	}
+	inject := "<script>window.__devBuild=" + opts.devDataJSON + ";</script>"
+	return strings.Replace(html, "</head>", inject+headEndTag, 1)
+}
+
 func transformPage(html string, opts buildOptions, assetsDir string, mirrorer *externalAssetMirrorer) (string, map[string]string, error) {
 	html = injectNavigationEnhancements(html)
 	html = injectTracker(html, opts)
+	html = injectDevData(html, opts)
 
 	if opts.inlineAssets {
 		// Full asset inlining (CSS + JS + images). Converts url() to data URIs so the
