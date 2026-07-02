@@ -11,16 +11,16 @@ import (
 )
 
 type buildOptions struct {
-	websiteRoot             string
-	assetsDir               string
-	templatesDir            string
-	sitemapConfig           string
-	sitemapBaseURL          string
-	siteDataSource          string
-	outDir                  string
-	postsDir                string
-	projectsFile            string
-	coursesFile             string
+	websiteRoot    string
+	assetsDir      string
+	templatesDir   string
+	sitemapConfig  string
+	sitemapBaseURL string
+	siteDataSource string
+	outDir         string
+	postsDir       string
+	projectsFile   string
+	coursesFile    string
 	// contentSource is "prod" (default) or "mock". When "prod", the build fails
 	// if any content path contains /mock/ — prevents mock data reaching prod by
 	// accident. Set to "mock" explicitly to opt in to dev content.

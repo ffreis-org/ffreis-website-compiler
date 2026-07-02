@@ -639,8 +639,8 @@ func collectSharedScripts(renderedPages map[string]string) map[string]bool {
 
 // devBuildPayload is the shape of window.__devBuild injected by -dev-data.
 type devBuildPayload struct {
-	ContentSource string   `json:"contentSource"`
-	ContentLangs  []string `json:"contentLangs"`
+	ContentSource string         `json:"contentSource"`
+	ContentLangs  []string       `json:"contentLangs"`
 	Posts         []devItemEntry `json:"posts"`
 	Courses       []devItemEntry `json:"courses"`
 	Projects      []devItemEntry `json:"projects"`
