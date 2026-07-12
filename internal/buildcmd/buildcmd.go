@@ -77,11 +77,12 @@ var (
 // optionalContent holds the blog posts, projects, and courses loaded from
 // optional input flags, plus the page templates needed to render them.
 type optionalContent struct {
-	posts        []posts.Post
-	projects     []projects.Project
-	courses      []courses.Course
-	postTemplate *sitegen.PageTemplate
-	blogTemplate *sitegen.PageTemplate
+	posts          []posts.Post
+	projects       []projects.Project
+	courses        []courses.Course
+	postTemplate   *sitegen.PageTemplate
+	blogTemplate   *sitegen.PageTemplate
+	courseTemplate *sitegen.PageTemplate // the internal "course" landing template
 }
 
 func Run(args []string, logger *slog.Logger) error {
@@ -251,6 +252,9 @@ func findPaginationTemplates(pages []sitegen.PageTemplate, content *optionalCont
 		case "blog":
 			tmp := pages[i]
 			content.blogTemplate = &tmp
+		case "course":
+			tmp := pages[i]
+			content.courseTemplate = &tmp
 		}
 	}
 }
@@ -272,6 +276,12 @@ func writeAllPaginatedContent(
 	if err := maybeWritePostContent(logger, opts, content, siteData, assetsDir, mirrorer); err != nil {
 		return nil, err
 	}
+
+	courseLandingURLs, err := maybeWriteCourseLandingPages(logger, opts, content, siteData, assetsDir, mirrorer)
+	if err != nil {
+		return nil, err
+	}
+	extraSitemapURLs = append(extraSitemapURLs, courseLandingURLs...)
 
 	blogURLs, err := maybeWriteBlogListings(logger, opts, content, siteData, assetsDir, mirrorer)
 	if err != nil {
