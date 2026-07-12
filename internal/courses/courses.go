@@ -56,6 +56,20 @@ func coursePath(slug string) string {
 	return "/courses/" + slug + "/"
 }
 
+// formatMoney renders a price in cents as a currency string, dropping ".00" for
+// whole amounts. 4900 -> "$49"; 4999 -> "$49.99"; 0 -> "" (no price).
+func formatMoney(symbol string, cents int) string {
+	if cents <= 0 {
+		return ""
+	}
+	whole := cents / 100
+	frac := cents % 100
+	if frac == 0 {
+		return fmt.Sprintf("%s%d", symbol, whole)
+	}
+	return fmt.Sprintf("%s%d.%02d", symbol, whole, frac)
+}
+
 // LoadCoursesFile reads a YAML list of courses from path and returns them
 // sorted ascending by Order, then by Title for ties. A missing slug is derived
 // from the title so every course has a stable landing-page path.
@@ -110,6 +124,8 @@ func baseMap(c Course) map[string]any {
 		"sale_mode":             c.SaleMode,
 		"price_usd_cents":       c.PriceUsdCents,
 		"price_brl_cents":       c.PriceBrlCents,
+		"price_usd_display":     formatMoney("$", c.PriceUsdCents),
+		"price_brl_display":     formatMoney("R$", c.PriceBrlCents),
 		"udemy_url":             c.UdemyURL,
 		"supported_languages":   langs,
 		"localized_cta_labels":  ctaLabels,

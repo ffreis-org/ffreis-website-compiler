@@ -20,6 +20,25 @@ func TestSlugify(t *testing.T) {
 	}
 }
 
+func TestFormatMoney(t *testing.T) {
+	cases := []struct {
+		symbol string
+		cents  int
+		want   string
+	}{
+		{"$", 4900, "$49"},
+		{"$", 4999, "$49.99"},
+		{"R$", 24900, "R$249"},
+		{"$", 0, ""},
+		{"$", -1, ""},
+	}
+	for _, c := range cases {
+		if got := formatMoney(c.symbol, c.cents); got != c.want {
+			t.Errorf("formatMoney(%q, %d) = %q, want %q", c.symbol, c.cents, got, c.want)
+		}
+	}
+}
+
 func writeCoursesFile(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
