@@ -128,8 +128,8 @@ func Run(args []string, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if _, err := assetusage.Validate(assetsDir, renderedPages); err != nil {
-		return fmt.Errorf("validating local css/js asset usage: %w", err)
+	if err := validateAssetUsage(logger, opts, assetsDir, renderedPages); err != nil {
+		return err
 	}
 
 	// Cross-page sharing analysis: identify which JS files appear on more than one page.
@@ -164,7 +164,7 @@ func Run(args []string, logger *slog.Logger) error {
 	}
 	logger.Info("internal link check passed", "out_dir", opts.outDir)
 
-	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages, extraSitemapURLs); err != nil {
+	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages, extraSitemapURLs, siteDataResult.Data); err != nil {
 		return err
 	}
 
@@ -207,7 +207,15 @@ func prepareBuild(args []string, logger *slog.Logger) (opts buildOptions, assets
 func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalContent, error) {
 	content := &optionalContent{}
 
-	if opts.postsDir != "" {
+	// Inject section flags AFTER contract validation (this function runs post-
+	// validation), so sections.<name> needs no contract entry and cannot dangle.
+	// Templates + filterInternalPages + the sitemap read these via sectionEnabled.
+	injectSectionFlags(siteData, opts.disabledSections)
+
+	// A disabled section (sections.<name>: false) loads no content, so no
+	// listing/detail pages, RSS, or home carousel are produced for it. Combined
+	// with filterInternalPages dropping its base page, the section is fully absent.
+	if opts.postsDir != "" && sectionEnabled(siteData, "blog") {
 		loaded, err := posts.LoadPostsDir(opts.postsDir)
 		if err != nil {
 			return nil, fmt.Errorf("loading blog posts: %w", err)
@@ -219,7 +227,7 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		injectPostsBlogList(siteData, loaded, opts.itemsPerPage)
 	}
 
-	if opts.projectsFile != "" {
+	if opts.projectsFile != "" && sectionEnabled(siteData, "projects") {
 		loaded, err := projects.LoadProjectsFile(opts.projectsFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading projects: %w", err)
@@ -228,7 +236,7 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		injectProjectsHomeCarousel(siteData, loaded, opts.itemsPerPage)
 	}
 
-	if opts.coursesFile != "" {
+	if opts.coursesFile != "" && sectionEnabled(siteData, "courses") {
 		loaded, err := courses.LoadCoursesFile(opts.coursesFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading courses: %w", err)
@@ -236,6 +244,8 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		content.courses = loaded
 		injectCoursesHomeCarousel(siteData, loaded, opts.itemsPerPage)
 	}
+
+	pruneDisabledSectionData(siteData, opts.disabledSections)
 
 	return content, nil
 }
@@ -517,14 +527,14 @@ func findTemplate(pages []sitegen.PageTemplate, name string) *sitegen.PageTempla
 	return nil
 }
 
-func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir string, pages []sitegen.PageTemplate, extraURLs []sitemap.URLItem) error {
+func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir string, pages []sitegen.PageTemplate, extraURLs []sitemap.URLItem, siteData map[string]any) error {
 	sitemapConfigPath, err := resolveSitemapConfigPath(opts.websiteRoot, opts.sitemapConfig)
 	if err != nil {
 		return err
 	}
 
 	if sitemapConfigPath != "" {
-		if err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir, extraURLs); err != nil {
+		if err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir, extraURLs, siteData); err != nil {
 			return err
 		}
 		logger.Info("generated sitemap from config", "config_path", sitemapConfigPath, "target", filepath.Join(opts.outDir, sitemapXML))
@@ -560,11 +570,134 @@ func resolveSitemapConfigPath(websiteRoot, flagPath string) (string, error) {
 	return "", nil
 }
 
-func generateSitemapFromConfig(configPath, websiteRoot, outDir string, extraURLs []sitemap.URLItem) error {
+// sectionForPath maps a URL path to the content section that gates it, or ""
+// when the path is not section-gated. Segment-based so it matches whether or not
+// the path carries a language base prefix: "/blog/", "/pt/blog/", "/blog/x/" → blog.
+func sectionForPath(path string) string {
+	for _, seg := range strings.Split(strings.Trim(path, "/"), "/") {
+		switch seg {
+		case "blog":
+			return "blog"
+		case "projects":
+			return "projects"
+		case "courses":
+			return "courses"
+		}
+	}
+	return ""
+}
+
+// validateAssetUsage checks that every local CSS/JS asset is referenced by a
+// rendered page. Disabling a section legitimately orphans its assets (e.g.
+// carousel.js once every carousel is hidden), so when sections are disabled an
+// unused asset is downgraded to a warning — but a missing reference (a genuinely
+// broken asset link) still fails the build.
+func validateAssetUsage(logger *slog.Logger, opts buildOptions, assetsDir string, renderedPages map[string]string) error {
+	result, err := assetusage.Validate(assetsDir, renderedPages)
+	if err == nil {
+		return nil
+	}
+	if len(opts.disabledSections) > 0 && len(result.MissingRef) == 0 {
+		for _, a := range append(result.UnusedCSS, result.UnusedJS...) {
+			logger.Warn("unused asset tolerated because a content section is disabled", "asset", a)
+		}
+		return nil
+	}
+	return fmt.Errorf("validating local css/js asset usage: %w", err)
+}
+
+// injectSectionFlags writes sections.<name>: false into siteData for each
+// disabled section. Called after contract validation so the flag needs no
+// contract entry; sectionEnabled and the templates read it back.
+func injectSectionFlags(siteData map[string]any, disabled []string) {
+	if len(disabled) == 0 {
+		return
+	}
+	sections := make(map[string]any, len(disabled))
+	for _, name := range disabled {
+		sections[name] = false
+	}
+	siteData["sections"] = sections
+}
+
+// pruneDisabledSectionData removes references to disabled sections from the site
+// data that templates render unconditionally: the nav/footer list, the human
+// sitemap page's link + post lists, and the home page's blog/courses blocks
+// (which gate on data presence). Runs after section flags are injected — i.e.
+// after contract validation — so the tracer still sees the full data. Together
+// with filterInternalPages (drops the pages) and filterDisabledSectionURLs
+// (sitemap.xml) this ensures a disabled section leaves no reachable link, so the
+// internal link checker stays green.
+func pruneDisabledSectionData(siteData map[string]any, disabled []string) {
+	if len(disabled) == 0 {
+		return
+	}
+	off := make(map[string]bool, len(disabled))
+	for _, s := range disabled {
+		off[s] = true
+	}
+	// nav + footer both range over siteData["nav"].
+	siteData["nav"] = filterLinksBySection(siteData["nav"], off)
+	pages, ok := siteData["pages"].(map[string]any)
+	if !ok {
+		return
+	}
+	if sm, ok := pages["sitemap"].(map[string]any); ok {
+		sm["links"] = filterLinksBySection(sm["links"], off)
+	}
+	if off["blog"] {
+		// Home blog block + sitemap post list read pages.blog.posts.
+		if blog, ok := pages["blog"].(map[string]any); ok {
+			blog["posts"] = []any{}
+		}
+	}
+	if off["courses"] {
+		// Home courses block gates on pages.index.courses_section.
+		if idx, ok := pages["index"].(map[string]any); ok {
+			delete(idx, "courses_section")
+		}
+	}
+}
+
+// filterLinksBySection drops list entries whose "href" points at a disabled section.
+func filterLinksBySection(v any, off map[string]bool) any {
+	items, ok := v.([]any)
+	if !ok {
+		return v
+	}
+	result := make([]any, 0, len(items))
+	for _, it := range items {
+		if m, ok := it.(map[string]any); ok {
+			if href, ok := m["href"].(string); ok {
+				if sec := sectionForPath(href); sec != "" && off[sec] {
+					continue
+				}
+			}
+		}
+		result = append(result, it)
+	}
+	return result
+}
+
+// filterDisabledSectionURLs drops static sitemap entries belonging to a disabled
+// content section so a disabled section leaves no trace in sitemap.xml.
+func filterDisabledSectionURLs(urls []sitemap.URLItem, siteData map[string]any) []sitemap.URLItem {
+	result := urls[:0:0]
+	for _, u := range urls {
+		if sec := sectionForPath(u.Path); sec != "" && !sectionEnabled(siteData, sec) {
+			continue
+		}
+		result = append(result, u)
+	}
+	return result
+}
+
+func generateSitemapFromConfig(configPath, websiteRoot, outDir string, extraURLs []sitemap.URLItem, siteData map[string]any) error {
 	cfg, err := sitemap.LoadConfig(configPath)
 	if err != nil {
 		return err
 	}
+	cfg.URLs = filterDisabledSectionURLs(cfg.URLs, siteData)
 	cfg.URLs = append(cfg.URLs, extraURLs...)
 
 	xmlBytes, err := sitemap.GenerateXML(cfg, websiteRoot)

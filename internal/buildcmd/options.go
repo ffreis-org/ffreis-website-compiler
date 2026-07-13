@@ -35,6 +35,11 @@ type buildOptions struct {
 	inlineBodyCSS           bool
 	rasterInlineThreshold   int
 	siblingBasePaths        []string
+	// disabledSections lists content sections ("blog", "courses", "projects") to
+	// hide: their pages, nav/footer entries, home-page blocks, and sitemap URLs are
+	// omitted. Injected into siteData as sections.<name>: false AFTER contract
+	// validation, so it needs no contract entry and cannot dangle.
+	disabledSections []string
 	mirrorExternalAssets    bool
 	mirroredAssetsDir       string
 	enableSanity            bool
@@ -86,6 +91,8 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 	fs.IntVar(&opts.rasterInlineThreshold, "raster-inline-threshold", 0, "inline local raster <img> files smaller than this many bytes as base64 data URIs; 0 to disable; skips LQIP-processed images and SVGs")
 	var siblingBasePathsFlag string
 	fs.StringVar(&siblingBasePathsFlag, "sibling-base-paths", "", "comma-separated URL prefixes of sibling deployments sharing the same CloudFront distribution (e.g. 'en,jp'); links under these prefixes are skipped by the internal link checker")
+	var disableSectionsFlag string
+	fs.StringVar(&disableSectionsFlag, "disable-sections", "", "comma-separated content sections to hide entirely (blog,courses,projects): drops their pages, nav/footer links, home-page blocks and sitemap entries")
 	fs.BoolVar(&opts.mirrorExternalAssets, "mirror-external-assets", false, "download external css/js/image/font assets into output and rewrite references to local copies")
 	fs.StringVar(&opts.mirroredAssetsDir, "mirrored-assets-dir", "external", "subdirectory inside output for mirrored external assets")
 	fs.BoolVar(&opts.enableSanity, "sanity", true, "fail the build if generic sanity checks fail (site contract + invariants + asset reachability)")
@@ -135,6 +142,12 @@ func parseBuildOptions(args []string) (buildOptions, error) {
 			if s != "" {
 				opts.siblingBasePaths = append(opts.siblingBasePaths, s)
 			}
+		}
+	}
+
+	for _, s := range strings.Split(disableSectionsFlag, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			opts.disabledSections = append(opts.disabledSections, s)
 		}
 	}
 
