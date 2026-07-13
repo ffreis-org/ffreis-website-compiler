@@ -174,17 +174,56 @@ func resolvePageSlug(siteData map[string]any, pageName string) string {
 	return slug
 }
 
+// sectionEnabled reports whether a content section (e.g. "blog", "courses",
+// "projects") is enabled for this build. Sections default to ENABLED; a site
+// disables one by setting sections.<name>: false in its site data. An absent
+// sections map or key means enabled, so sites without a sections block are
+// completely unaffected.
+func sectionEnabled(siteData map[string]any, name string) bool {
+	sections, ok := siteData["sections"].(map[string]any)
+	if !ok {
+		return true
+	}
+	enabled, ok := sections[name].(bool)
+	if !ok {
+		return true
+	}
+	return enabled
+}
+
+// pageSection maps a page-template name to the content section that gates it,
+// or "" when the page is not section-gated. Used to drop a whole section's
+// pages (listing + detail) when that section is disabled.
+func pageSection(pageName string) string {
+	switch pageName {
+	case "blog", "post":
+		return "blog"
+	case "projects":
+		return "projects"
+	case "courses":
+		return "courses"
+	default:
+		return ""
+	}
+}
+
 // filterInternalPages removes pages marked internal: true in the site data
-// (pages.<name>.internal). Such pages are still rendered (for asset usage
-// validation) but excluded from HTML output and sitemap generation.
+// (pages.<name>.internal) and pages belonging to a disabled content section
+// (sections.<name>: false). Internal pages are still rendered (for asset usage
+// validation) but excluded from HTML output and sitemap generation; disabled
+// sections are dropped entirely so no listing/detail page is emitted.
 func filterInternalPages(pages []sitegen.PageTemplate, siteData map[string]any) []sitegen.PageTemplate {
 	pagesData, _ := siteData["pages"].(map[string]any)
 	result := pages[:0:0]
 	for _, p := range pages {
 		pd, _ := pagesData[p.Name].(map[string]any)
-		if internal, _ := pd["internal"].(bool); !internal {
-			result = append(result, p)
+		if internal, _ := pd["internal"].(bool); internal {
+			continue
 		}
+		if sec := pageSection(p.Name); sec != "" && !sectionEnabled(siteData, sec) {
+			continue
+		}
+		result = append(result, p)
 	}
 	return result
 }

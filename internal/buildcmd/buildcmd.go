@@ -164,7 +164,7 @@ func Run(args []string, logger *slog.Logger) error {
 	}
 	logger.Info("internal link check passed", "out_dir", opts.outDir)
 
-	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages, extraSitemapURLs); err != nil {
+	if err := maybeGenerateSitemap(logger, opts, templatesDir, pages, extraSitemapURLs, siteDataResult.Data); err != nil {
 		return err
 	}
 
@@ -207,7 +207,10 @@ func prepareBuild(args []string, logger *slog.Logger) (opts buildOptions, assets
 func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalContent, error) {
 	content := &optionalContent{}
 
-	if opts.postsDir != "" {
+	// A disabled section (sections.<name>: false) loads no content, so no
+	// listing/detail pages, RSS, or home carousel are produced for it. Combined
+	// with filterInternalPages dropping its base page, the section is fully absent.
+	if opts.postsDir != "" && sectionEnabled(siteData, "blog") {
 		loaded, err := posts.LoadPostsDir(opts.postsDir)
 		if err != nil {
 			return nil, fmt.Errorf("loading blog posts: %w", err)
@@ -219,7 +222,7 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		injectPostsBlogList(siteData, loaded, opts.itemsPerPage)
 	}
 
-	if opts.projectsFile != "" {
+	if opts.projectsFile != "" && sectionEnabled(siteData, "projects") {
 		loaded, err := projects.LoadProjectsFile(opts.projectsFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading projects: %w", err)
@@ -228,7 +231,7 @@ func loadOptionalContent(opts buildOptions, siteData map[string]any) (*optionalC
 		injectProjectsHomeCarousel(siteData, loaded, opts.itemsPerPage)
 	}
 
-	if opts.coursesFile != "" {
+	if opts.coursesFile != "" && sectionEnabled(siteData, "courses") {
 		loaded, err := courses.LoadCoursesFile(opts.coursesFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading courses: %w", err)
@@ -517,14 +520,14 @@ func findTemplate(pages []sitegen.PageTemplate, name string) *sitegen.PageTempla
 	return nil
 }
 
-func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir string, pages []sitegen.PageTemplate, extraURLs []sitemap.URLItem) error {
+func maybeGenerateSitemap(logger *slog.Logger, opts buildOptions, templatesDir string, pages []sitegen.PageTemplate, extraURLs []sitemap.URLItem, siteData map[string]any) error {
 	sitemapConfigPath, err := resolveSitemapConfigPath(opts.websiteRoot, opts.sitemapConfig)
 	if err != nil {
 		return err
 	}
 
 	if sitemapConfigPath != "" {
-		if err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir, extraURLs); err != nil {
+		if err := generateSitemapFromConfig(sitemapConfigPath, opts.websiteRoot, opts.outDir, extraURLs, siteData); err != nil {
 			return err
 		}
 		logger.Info("generated sitemap from config", "config_path", sitemapConfigPath, "target", filepath.Join(opts.outDir, sitemapXML))
@@ -560,11 +563,40 @@ func resolveSitemapConfigPath(websiteRoot, flagPath string) (string, error) {
 	return "", nil
 }
 
-func generateSitemapFromConfig(configPath, websiteRoot, outDir string, extraURLs []sitemap.URLItem) error {
+// sectionForPath maps a sitemap path to the content section that gates it, or
+// "" when the path is not section-gated. "/blog/", "/blog/x/" → blog, etc.
+func sectionForPath(path string) string {
+	switch {
+	case path == "/blog" || strings.HasPrefix(path, "/blog/"):
+		return "blog"
+	case path == "/projects" || strings.HasPrefix(path, "/projects/"):
+		return "projects"
+	case path == "/courses" || strings.HasPrefix(path, "/courses/"):
+		return "courses"
+	default:
+		return ""
+	}
+}
+
+// filterDisabledSectionURLs drops static sitemap entries belonging to a disabled
+// content section so a disabled section leaves no trace in sitemap.xml.
+func filterDisabledSectionURLs(urls []sitemap.URLItem, siteData map[string]any) []sitemap.URLItem {
+	result := urls[:0:0]
+	for _, u := range urls {
+		if sec := sectionForPath(u.Path); sec != "" && !sectionEnabled(siteData, sec) {
+			continue
+		}
+		result = append(result, u)
+	}
+	return result
+}
+
+func generateSitemapFromConfig(configPath, websiteRoot, outDir string, extraURLs []sitemap.URLItem, siteData map[string]any) error {
 	cfg, err := sitemap.LoadConfig(configPath)
 	if err != nil {
 		return err
 	}
+	cfg.URLs = filterDisabledSectionURLs(cfg.URLs, siteData)
 	cfg.URLs = append(cfg.URLs, extraURLs...)
 
 	xmlBytes, err := sitemap.GenerateXML(cfg, websiteRoot)
