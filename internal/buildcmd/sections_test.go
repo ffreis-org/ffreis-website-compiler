@@ -76,9 +76,9 @@ func TestFilterDisabledSectionURLs_DropsMatchingPaths(t *testing.T) {
 
 func TestSectionForPath(t *testing.T) {
 	cases := map[string]string{
-		"/blog/": "blog", "/blog/a-post/": "blog",
-		"/courses/": "courses", "/projects/": "projects",
-		"/": "", "/about/": "", "/blogging/": "",
+		"/blog/": "blog", "/blog/a-post/": "blog", "/pt/blog/": "blog", "/en/courses/": "courses",
+		"/courses/": "courses", "/projects/": "projects", "/pt/projects/": "projects",
+		"/": "", "/about/": "", "/blogging/": "", "/pt/about/": "",
 	}
 	for path, want := range cases {
 		if got := sectionForPath(path); got != want {
