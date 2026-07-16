@@ -13,7 +13,7 @@ jobs:
   fuzz:
     permissions:
       contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-fuzz.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
+    uses: ffreis-org/ffreis-workflows-go/.github/workflows/go-fuzz.yml@d9b0146bb491bf06a79c9c6289034537522cbed3
     with:
       go-version: "1.25.8"
       working-directory: "."
