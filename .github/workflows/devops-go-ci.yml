@@ -27,7 +27,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # for golangci-lint-action
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-quick-checks.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
+    uses: ffreis-org/ffreis-workflows-go/.github/workflows/go-quick-checks.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
     with:
       go-version: "1.25.8"
       working-directory: "."
@@ -37,7 +37,7 @@ jobs:
     needs: [quick-checks]
     permissions:
       contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
+    uses: ffreis-org/ffreis-workflows-go/.github/workflows/go-test.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
     with:
       go-version: "1.25.8"
       working-directory: "."
@@ -48,7 +48,7 @@ jobs:
     needs: [quick-checks]
     permissions:
       contents: read
-    uses: FelipeFuhr/ffreis-workflows-go/.github/workflows/go-test.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
+    uses: ffreis-org/ffreis-workflows-go/.github/workflows/go-test.yml@03a0f49a676450744ed730b674c9194d353a4ad2 # post-v1.1.2
     with:
       go-version: "1.25.8"
       working-directory: "."
