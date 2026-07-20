@@ -29,7 +29,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: ffreis-org/ffreis-workflows-container/.github/workflows/container-build.yml@9de70bedfbb3de1cb0dfb5a4943b44c9fcf81042
+    uses: FelipeFuhr/ffreis-workflows-container/.github/workflows/container-build.yml@9de70bedfbb3de1cb0dfb5a4943b44c9fcf81042
     with:
       image: "website-compiler-cli"
       containerfile: "containers/Dockerfile.cli"
